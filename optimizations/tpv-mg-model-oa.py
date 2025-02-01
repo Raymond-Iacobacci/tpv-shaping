@@ -6,6 +6,8 @@ import json
 import os
 import sys
 import time
+import collections
+from pathlib import Path
 
 import ff
 import matplotlib.pyplot as plt
@@ -67,11 +69,9 @@ if resuming:  # Must choose iteration from at most one more than iterations alre
     num_images = config['num_images']
     if args.resume_iteration is not None:
         for img_idx in range(1, num_images + 1):
-            filename = os.path.join(log_dir, f'{img_idx}.{
-                                    args.resume_iteration-1}.npy')
+            filename = os.path.join(log_dir, f'{img_idx}.{args.resume_iteration-1}.npy')
             if not os.path.isfile(filename):
-                raise RuntimeError(f'Cannot resume iteration={
-                                   args.resume_iteration}. Missing file {filename}')
+                raise RuntimeError(f'Cannot resume iteration={args.resume_iteration}. Missing file {filename}')
     else:
         existing_iterations = []
         for img_idx in range(1, num_images + 1):
@@ -81,8 +81,7 @@ if resuming:  # Must choose iteration from at most one more than iterations alre
                 if fname.startswith(f"{img_idx}.") and fname.endswith('.npy')
             ]
             if not img_files:
-                raise RuntimeError(f'No iterations found for image {
-                                   img_idx}. Cannot resume.')
+                raise RuntimeError(f'No iterations found for image {img_idx}. Cannot resume.')
             existing_iterations.append(set(img_files))
 
         common_iterations = set.intersection(*existing_iterations)
@@ -92,8 +91,7 @@ if resuming:  # Must choose iteration from at most one more than iterations alre
 
         # Select the highest possible iteration
         start_iteration = max(common_iterations)+1
-        print(f'Automatically selected the highest common resume_iteration: {
-              start_iteration}')
+        print(f'Automatically selected the highest common resume_iteration: {start_iteration}')
 
 else:
 
@@ -140,6 +138,23 @@ save_image_per = 2
 def printf(string):
     if logging:
         print(string)
+        
+def write_to_temp_file(line, max_lines=1000):
+    temp_file = Path(ff.home_directory()) / 'transmitted_power_log.txt'
+    
+    # Read existing lines if file exists
+    lines = []
+    if temp_file.exists():
+        with open(temp_file, 'r') as f:
+            lines = f.readlines()
+    
+    # Add new line and keep only last max_lines
+    lines.append(line + '\n')
+    lines = lines[-max_lines:]
+    
+    # Write back to file
+    with open(temp_file, 'w') as f:
+        f.writelines(lines)
 
 ###############################################################################################
 
@@ -329,11 +344,12 @@ for it in range(start_iteration, num_cycles):
             )
 
             S.SetFrequency(1 / float(wavelength))
-            (forw, back) = S.GetPowerFlux(Layer='AirAbove', zOffset=0)
+            (norm_forw, norm_back) = S.GetPowerFluxByOrder(Layer='TungstenBelow', zOffset=0)[0]
 
-            transmitted_power_per_wavelength[i] = 1-np.abs(back)
+            transmitted_power_per_wavelength[i] = np.abs(norm_forw)
 
-            # printf(f'{torch.round(wavelength * 1000)}nm: {transmitted_power_per_wavelength[i]}')
+            power_line = f'{torch.round(wavelength * 1000)}nm: {transmitted_power_per_wavelength[i]}'
+            write_to_temp_file(power_line)
 
             zc = 0
             for z in grating_z_space:
@@ -391,7 +407,7 @@ for it in range(start_iteration, num_cycles):
             S.SetExcitationPlanewave(
                 IncidenceAngles=(
                     # polar angle in [0,180) -- this is the first one that we change for the angular dependence
-                    0,
+                    config['off_angle'],
                     0  # azimuthal angle in [0,360)
                 ), sAmplitude=0, pAmplitude=1, Order=0
             ) # The scaling will be handled in the multiplication step at the end
@@ -429,8 +445,7 @@ for it in range(start_iteration, num_cycles):
         fom_wrt_perm = fom_wrt_perm * current_gradient_scale
         print(f'Current gradient scale: {current_gradient_scale}')
         print(f'Gradient magnitude: {torch.mean(torch.abs(fom_wrt_perm))}')
-        print(f'Gradient to (binarization) lambda ratio: {np.mean(
-            np.abs(fom_wrt_perm.detach().numpy())) / (4 * config['binarization_scale'] / config['num_images'])}')
+        print(f'Gradient to (binarization) lambda ratio: {np.mean(np.abs(fom_wrt_perm.detach().numpy())) / (4 * config["binarization_scale"] / config["num_images"])}')
         print(f'Binarization: {torch.mean(2*torch.abs(image - 0.5))*100:.2f}%')
         # Averaging over all wavelengths (already accounted for the the adjoint step) and averaging over all z-points
         batch_fom_wrt_perm += fom_wrt_perm

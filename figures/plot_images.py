@@ -1,8 +1,10 @@
 import argparse
 import os
+import hashlib
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import ticker
+import re
 
 def parse_arguments():
     parser = argparse.ArgumentParser(
@@ -12,7 +14,7 @@ def parse_arguments():
         '--log-dir',
         type=str,
         required=True,
-        help="Path to the LOG_DIR containing image .npy files."
+        help="Path to the LOG_DIR containing image .npy files. The directory name should include a unique hash (e.g., config_<hash>)."
     )
     parser.add_argument(
         '--iteration',
@@ -30,7 +32,7 @@ def parse_arguments():
         '--output-dir',
         type=str,
         default='plots',
-        help="Directory to save the contour plots. Defaults to 'plots'."
+        help="Base directory to save the contour plots. Defaults to 'plots'."
     )
     parser.add_argument(
         '--show',
@@ -44,6 +46,18 @@ def parse_arguments():
     )
 
     return parser.parse_args()
+
+def extract_hash_from_path(log_dir):
+    """
+    Extract the hash from the log directory name.
+    Assumes the directory name contains a hash in the format 'config_<hash>'.
+    """
+    basename = os.path.basename(os.path.normpath(log_dir))
+    match = re.search(r'config[_-](\w+)', basename)
+    if match:
+        return match.group(1)
+    else:
+        raise ValueError(f"Unable to extract hash from log directory name '{basename}'.")
 
 def get_image_files(log_dir, iteration=None, image_index=None):
     """
@@ -78,7 +92,7 @@ def plot_contour(image_array, title, output_path, show_plot=False):
     """
     plt.figure(figsize=(8, 6))
     contour = plt.plot(image_array)
-    # plt.colorbar(contour, format='%.2f')
+    # plt.clabel(contour, inline=True, fontsize=8)
     plt.title(title)
     plt.xlabel('X-axis')
     plt.ylabel('Y-axis')
@@ -101,16 +115,33 @@ def main():
     log_dir = args.log_dir
     iteration = args.iteration
     image_index = args.image_index
-    output_dir = args.output_dir
+    base_output_dir = args.output_dir
     show_plot = args.show
+    saved_state = args.saved_state
 
     # Validate LOG_DIR
     if not os.path.isdir(log_dir):
         print(f"Error: The specified log directory '{log_dir}' does not exist.")
         return
 
-    # Create output directory if it doesn't exist
-    os.makedirs(output_dir, exist_ok=True)
+    try:
+        # Extract hash from the log directory name
+        config_hash = extract_hash_from_path(log_dir)
+        print(f"Extracted hash from log directory: {config_hash}")
+    except ValueError as ve:
+        print(f"Error: {ve}")
+        return
+
+    # Define the hashed output directory
+    output_dir = os.path.join(base_output_dir, config_hash)
+
+    # Check if the hashed output directory exists
+    if os.path.exists(output_dir):
+        print(f"Output directory '{output_dir}' already exists. Checking for existing plots.")
+    else:
+        # Create output directory if it doesn't exist
+        os.makedirs(output_dir, exist_ok=True)
+        print(f"Created new output directory: {output_dir}")
 
     # Retrieve image files based on the provided arguments
     image_files = get_image_files(log_dir, iteration, image_index)
@@ -122,12 +153,18 @@ def main():
     print(f"Found {len(image_files)} image file(s) to plot.")
 
     for img_idx, iter_num, file_path in sorted(image_files, key=lambda x: (x[1], x[0])):
-        # Define output plot filename first
+        # Define output plot filename
         plot_filename = f"image_{img_idx}_iteration_{iter_num}.png"
         output_path = os.path.join(output_dir, plot_filename)
 
-        # Skip if file already exists
+        # Check if the plot already exists
         if os.path.exists(output_path):
+            print(f"Plot '{plot_filename}' already exists. Skipping.")
+            continue
+
+        if saved_state:
+            # If saved_state is True, skip generating plots for existing images
+            print(f"Saved state is enabled. Skipping plot '{plot_filename}'.")
             continue
 
         # Only proceed with loading and plotting if file doesn't exist
@@ -144,4 +181,4 @@ def main():
         plot_contour(image_data, title, output_path, show_plot)
 
 if __name__ == "__main__":
-    main()
+        main()

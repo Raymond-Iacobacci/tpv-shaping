@@ -332,8 +332,10 @@ for it in range(start_iteration, num_cycles):
 
             S.SetFrequency(1 / float(wavelength))
             (forw, back) = S.GetPowerFlux(Layer='AirAbove', zOffset=0)
+            (nforw, nback) = S.GetPowerFluxByOrder(Layer='AirAbove', zOffset=0)
+            #printf(f'{torch.round(wavelength * 1000)}nm: normal exit ({nback}), total exit ({back})')
 
-            transmitted_power_per_wavelength[i] = 1-np.abs(back)
+            transmitted_power_per_wavelength[i] = 1-np.abs(nback)
 
             # printf(f'{torch.round(wavelength * 1000)}nm: {transmitted_power_per_wavelength[i]}')
 
