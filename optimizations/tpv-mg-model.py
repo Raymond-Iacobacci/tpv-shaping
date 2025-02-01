@@ -234,14 +234,6 @@ def power_ratio(lambda_i, emissivity_dataset, T_emitter, E_g_PV):
     return FOM
 
 
-def read_live_gradient_scale():
-    try:
-        with open(f'{ff.home_directory()}/LIVE_GRADIENT_SCALE.txt', 'r') as f:
-            return float(f.read().strip())
-    except FileNotFoundError:
-        return config['default_gradient_scale']  # Use default if file doesn't exist
-
-
 n_all = np.load('/home/rliacobacci/Downloads/n_allHTMats.npz')
 k_all = np.load('/home/rliacobacci/Downloads/k_allHTMats.npz')
 
@@ -277,7 +269,7 @@ for it in range(start_iteration, num_cycles):
     read = False
     image_gradient = np.zeros((100,))
     
-    current_gradient_scale = read_live_gradient_scale()
+    current_gradient_scale = ff.read_live_gradient_scale(config['default_gradient_scale'])
     
     for image_index, image in enumerate(generated_images):
         image.requires_grad_(True)

@@ -18,6 +18,12 @@ def load_config_in_dir(dir_path):
             return json.load(f)
     return None
 
+def read_live_gradient_scale(default:float):
+    try:
+        with open(f'{home_directory()}/.LIVE_GRADIENT_SCALE.txt', 'r') as f:
+            return float(f.read().strip())
+    except FileNotFoundError:
+        return default  # Use default if file doesn't exist
 
 def replace_nan_with_neighbors(arr):
     for i in range(len(arr)):
