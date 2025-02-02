@@ -1,0 +1,13 @@
+{
+    "num_images": 3,
+    "hidden_dimension": 10,
+    "noise_dimension": 3,
+    "seeds": {
+        "torch": 42,
+        "numpy": 42
+    },
+    "default_gradient_scale": 100.0,
+    "learning_rate": 0.007,
+    "binarization_scale": 1e-11,
+    "off_angle": 60.0
+}

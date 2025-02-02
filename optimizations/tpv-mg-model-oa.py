@@ -35,7 +35,7 @@ config = {
     "default_gradient_scale": float(1e2),
     "learning_rate": float(7e-3),
     "binarization_scale": float(1e-11),
-    "off_angle": float(30.0),
+    "off_angle": float(60.0),
 }
 
 base_log_dir = os.path.join(ff.home_directory(), 'logs')
