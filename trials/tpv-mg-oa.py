@@ -19,7 +19,7 @@ config = {
         "torch": int(42),
         "numpy": int(42)
     },
-    "off_angle": float(0.0),
+    "off_angle": float(30.0),
 }
 
 torch.manual_seed(config['seeds']['torch'])
@@ -98,7 +98,8 @@ w_n = n_all['arr_0'][:, -1] + k_all['arr_0'][:, -1] * 1j
 aln_n = n_all['arr_0'][:, 17] + k_all['arr_0'][:, 17] * 1j
 
 z_step = .1
-aln_depth = .473
+# aln_depth = .473
+aln_depth = .5
 z_max = 3+aln_depth
 z_min = -z_step
 

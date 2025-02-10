@@ -19,8 +19,8 @@ config = {
         "torch": int(42),
         "numpy": int(42)
     },
-    "off_angle": float(30.0),
-    "homogeneous": False,
+    "off_angle": float(0.0),
+    "homogeneous": True,
 }
 
 torch.manual_seed(config['seeds']['torch'])
@@ -175,7 +175,8 @@ for i, wavelength in enumerate(wavelengths):
     (nforw, nback) = S.GetPowerFluxByOrder(Layer='TungstenBelow', zOffset=0)[0]
 
     transmitted_power_per_wavelength[i] = np.abs(nforw)
-    print(f'{torch.round(wavelength * 1000)}nm: {transmitted_power_per_wavelength[i]}')
+    if not config['homogeneous']:
+        print(f'{torch.round(wavelength * 1000)}nm: {transmitted_power_per_wavelength[i]}')
 
     # zc = 0
     # for z in grating_z_space:

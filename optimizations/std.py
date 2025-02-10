@@ -25,7 +25,7 @@ parser.add_argument('--resume-choice', type=str, default=None,
 args = parser.parse_args()
 
 config = {
-    "num_images": int(3),
+    "num_images": int(1),
     "hidden_dimension": int(10),
     "noise_dimension": int(3),
     "seeds": {
@@ -35,7 +35,7 @@ config = {
     "default_gradient_scale": float(1e2),
     "learning_rate": float(7e-3),
     "binarization_scale": float(1e-11),
-    "off_angle": float(60.0),
+    "off_angle": float(45.0),
 }
 
 base_log_dir = os.path.join(ff.home_directory(), 'logs')
@@ -165,11 +165,13 @@ class Generator(nn.Module):
         self.noise = torch.rand(
             size=(config['num_images'], config['noise_dimension']))
         self.FC = nn.Sequential(
-            nn.Linear(in_features=config['noise_dimension'],
-                      out_features=config['hidden_dimension']),
-            nn.ReLU(),
-            nn.Linear(
-                in_features=config['hidden_dimension'], out_features=100),
+            # nn.Linear(in_features=config['noise_dimension'],
+            #           out_features=config['hidden_dimension']),
+            # nn.ReLU(),
+            # nn.Linear(
+            #     in_features=config['hidden_dimension'], out_features=100),
+            nn.Linear(in_features = config['noise_dimension'],
+            out_features=100),
         )
 
     def forward(self):
@@ -328,7 +330,7 @@ for it in range(start_iteration, num_cycles):
                     # polar angle in [0,180) -- this is the first one that we change for the angular dependence
                     config['off_angle'],
                     0  # azimuthal angle in [0,360)
-                ), sAmplitude=0, pAmplitude=1, Order=0
+                ), sAmplitude=1/np.sqrt(2), pAmplitude=1/np.sqrt(2), Order=0
             )
 
             S.SetOptions(
@@ -401,7 +403,7 @@ for it in range(start_iteration, num_cycles):
                     # polar angle in [0,180) -- this is the first one that we change for the angular dependence
                     config['off_angle'],
                     0  # azimuthal angle in [0,360)
-                ), sAmplitude=0, pAmplitude=1, Order=0
+                ), sAmplitude=1, pAmplitude=1, Order=0
             ) # The scaling will be handled in the multiplication step at the end
 
             S.SetOptions(
