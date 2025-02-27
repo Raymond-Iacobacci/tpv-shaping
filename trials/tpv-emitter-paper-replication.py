@@ -22,11 +22,11 @@ config = {
     "off_angle": float(0.0),
     "square_x_location": float(0.15),
     "square_y_location": float(0.15),
-    "polarization_angle": float(30),
+    "polarization_angle": float(0),
     "square_half_widths": float(0.15),
     "wavelength_start_index": int(0),#default0
     "wavelength_end_index": int(2649),#default2649
-    "measurement_location": int(4),
+    "measurement_location": int(6),
 }
 
 save = True
@@ -103,7 +103,7 @@ for i, wavelength in enumerate(wavelengths[config['wavelength_start_index']:conf
 
     S.AddLayer(Name='AirAbove', Thickness=1, Material='Vacuum')
     S.AddLayer(Name='TungstenGrid', Thickness=.06, Material='Vacuum')
-    S.SetRegionRectangle(Layer='TungstenGrid', Material='Tungsten', Center=(config['square_x_location'] + config['square_half_widths']/2, config['square_y_location'] + config['square_half_widths']/2), Halfwidths=(config['square_half_widths'], config['square_half_widths']), Angle = 0)
+    S.SetRegionRectangle(Layer='TungstenGrid', Material='Tungsten', Center=(config['square_x_location'] + config['square_half_widths'], config['square_y_location'] + config['square_half_widths']), Halfwidths=(2*config['square_half_widths'], config['square_half_widths']), Angle = 0)
     S.AddLayer(Name = 'SiliconDioxide', Thickness = .06, Material='SiliconDioxide')
     S.AddLayer(Name='TungstenBelow', Thickness=1, Material='Tungsten')
     S.AddLayer(Name="AirBelow", Thickness=1, Material='Vacuum')
@@ -125,6 +125,8 @@ for i, wavelength in enumerate(wavelengths[config['wavelength_start_index']:conf
     (_, back) = S.GetPowerFlux(Layer = 'AirAbove', zOffset=0)
     (_, back2) = S.GetPowerFlux(Layer='SiliconDioxide', zOffset=0)
     (forw2, _) = S.GetPowerFlux(Layer='SiliconDioxide', zOffset=0.06)
+    (_, back3) = S.GetPowerFlux(Layer='TungstenGrid', zOffset=0)
+    (_, back4) = S.GetPowerFlux(Layer='AirAbove', zOffset=1)
     # print(np.abs(forw) - np.abs(back))
 
     if config['measurement_location'] == 0:
@@ -137,6 +139,10 @@ for i, wavelength in enumerate(wavelengths[config['wavelength_start_index']:conf
         transmitted_power_per_wavelength.append(1-np.abs(back2))
     elif config['measurement_location'] == 4:
         transmitted_power_per_wavelength.append(np.abs(forw2))
+    elif config['measurement_location'] == 5:
+        transmitted_power_per_wavelength.append(1-np.abs(back)+(np.abs(back3) - np.abs(back1)))
+    elif config['measurement_location'] == 6:
+        transmitted_power_per_wavelength.append(1 - np.abs(back4))
     
     print(f'{torch.round(wavelength * 1000)}nm: {transmitted_power_per_wavelength[-1]}')
 
@@ -147,7 +153,7 @@ if save:
     config_str = json.dumps(config, sort_keys=True)
     # Create a hash of the config for unique identification
     config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]
-    base_name = f"logs/config_{config_hash}"
+    base_name = f"logs/rotated-single-dim-config_{config_hash}"
     os.makedirs(base_name, exist_ok=True)
     config_file = os.path.join(base_name, 'config.json')
     with open(config_file, 'w') as f:

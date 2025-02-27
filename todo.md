@@ -6,3 +6,4 @@
 6. Write a file which allows for randomized FOM testing for given structures.
 7. Make distinction between binarization gradient scaling and default gradient scaling.
 8. Move functions like JV calculations into the factory function file, and move the factory function file into the root directory.
+9. Make plotting standardized.

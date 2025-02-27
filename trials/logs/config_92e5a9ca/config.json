@@ -1,0 +1,14 @@
+{
+    "seeds": {
+        "torch": 42,
+        "numpy": 42
+    },
+    "off_angle": 0.0,
+    "square_x_location": 0.15,
+    "square_y_location": 0.15,
+    "polarization_angle": 30.0,
+    "square_half_widths": 0.15,
+    "wavelength_start_index": 0,
+    "wavelength_end_index": 2649,
+    "measurement_location": 6
+}
