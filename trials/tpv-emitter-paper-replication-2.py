@@ -17,7 +17,7 @@ from scipy.interpolate import CubicSpline
 
 wavelengths = torch.linspace(.350, 3, 2651)  # Issue when this goes past 99?
 # [::100] # This is necessary due to S4 bugging out at these wavelengths
-wavelengths = wavelengths[(wavelengths != 0.5) & (wavelengths != 1.0)]
+wavelengths = wavelengths[(wavelengths != 0.5) & (wavelengths != 1.0)][::50]
 
 
 def IQE(wavelength, e_g):
@@ -145,13 +145,9 @@ for harmonics in harmonic_values:
     transmitted_power_per_wavelength = []
 
     for i, wavelength in enumerate(wavelengths[config['wavelength_start_index']:config['wavelength_end_index']]):
-        if i % 50 != 0:
-            transmitted_power_per_wavelength.append(0)
-            continue
         i = i + config['wavelength_start_index']
         # TODO: change to 14 when actually using the grating
         S = S4.New(Lattice=((.6, 0), (0, .6)), NumBasis=config['harmonics'])
-        # S = S4.New(Lattice=.6, NumBasis=config['harmonics'])
 
         S.SetMaterial(Name='AluminumNitride', Epsilon=(aln_n[i]) ** 2)
         S.SetMaterial(Name='Tungsten', Epsilon=(w_n[i])**2)
@@ -163,7 +159,7 @@ for harmonics in harmonic_values:
         S.AddLayer(Name='TungstenGrid', Thickness=.06, Material='Vacuum')
         S.SetRegionRectangle(Layer='TungstenGrid', Material='Tungsten', Center=(
             config['square_x_location'] + config['square_half_widths'], config['square_y_location'] + config['square_half_widths']), Halfwidths=(config['square_half_widths'], config['square_half_widths']), Angle=0)
-        S.AddLayer(Name='SiliconDioxide', Thickness=.06, Material='AluminumNitride')
+        S.AddLayer(Name='SiliconDioxide', Thickness=.06, Material='SiliconDioxide')
         S.AddLayer(Name='TungstenBelow', Thickness=1, Material='Tungsten')
         S.AddLayer(Name="AirBelow", Thickness=1, Material='Vacuum')
 
@@ -186,12 +182,12 @@ for harmonics in harmonic_values:
         # (forw2, _) = S.GetPowerFlux(Layer='SiliconDioxide', zOffset=0.06)
         # (_, back3) = S.GetPowerFlux(Layer='TungstenGrid', zOffset=0)
         # (_, back4) = S.GetPowerFlux(Layer='AirAbove', zOffset=1)
-        # # print(np.abs(forw) - np.abs(back))
+        # print(np.abs(forw) - np.abs(back))
         # orders = S.GetBasisSet()
-        # total_exit_flux = 0
+        total_exit_flux = 0
         # for order in S.GetPowerFluxByOrder(Layer='AirAbove', zOffset=.5):
-        #     # Get the power flux for each diffraction order
-        #     total_exit_flux += np.abs(order[1])
+            # Get the power flux for each diffraction order
+            # total_exit_flux += np.abs(order[1])
 
         if config['measurement_location'] == 0:
             transmitted_power_per_wavelength.append(1 - np.abs(back))
@@ -222,7 +218,7 @@ for harmonics in harmonic_values:
         config_str = json.dumps(config, sort_keys=True)
         # Create a hash of the config for unique identification
         config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]
-        base_name = f"new-logs/rotated-single-dim-config_{config_hash}"
+        base_name = f"harmonic-logs/rotated-single-dim-config_{config_hash}"
         os.makedirs(base_name, exist_ok=True)
         config_file = os.path.join(base_name, 'config.json')
         with open(config_file, 'w') as f:

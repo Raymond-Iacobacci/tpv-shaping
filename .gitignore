@@ -1,2 +1,4 @@
-figures/plots/*
-logs/config*
+figures/trial-plots/*
+logs/*
+untracked-figures/
+.LIVE_GRADIENT_SCALE.txt
