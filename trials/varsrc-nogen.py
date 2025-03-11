@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import S4
 import torch
+from tqdm import tqdm
 
 config = {
     "num_images": int(1),
@@ -22,7 +23,7 @@ config = {
     },
     "learning_rate": float(5e4),
     "incidence_angle": float(0),
-    "excite_harmonics": int(50),
+    "excite_harmonics": int(100),
     "image_harmonics": int(10),
     "num_image_squares": int(10),
     "polarization_angle": float(45),
@@ -62,7 +63,7 @@ x_grtg_space = np.array([(q+1) / num_image_squares - 1 / (2 * num_image_squares)
 
 generated_images = (torch.rand((config['num_images'], num_image_squares), requires_grad = False))
 homogeneous = False
-generated_images = torch.reshape(torch.tensor([1.0,0.9968297,0.7067914,1.0,0.7684266,1.0,0.70334226,0.9975946,1.0,0.6070011]), (1, 10))
+# generated_images = torch.reshape(torch.tensor([1.0,0.9968297,0.7067914,1.0,0.7684266,1.0,0.70334226,0.9975946,1.0,0.6070011]), (1, 10))
 
 for it in range(num_cycles):
 
@@ -79,7 +80,8 @@ for it in range(num_cycles):
         transmitted_power_per_wavelength = torch.zeros((len(wavelengths),))
         dflux_deps_all_wavelength = np.zeros((wavelengths.shape[0], num_image_squares))
         
-        for i_wavelength, wavelength in enumerate(wavelengths):
+        for i_wavelength, wavelength in enumerate(tqdm(wavelengths, desc="Processing wavelengths", leave=False)):
+
     
             S = S4.New(Lattice = 1, NumBasis=config['image_harmonics']) # This sets nonzero harmonics only in a single (x) direction, so we actually have 14 harmonics in that direction
             S.SetOptions(LanczosSmoothing=True)
@@ -100,10 +102,12 @@ for it in range(num_cycles):
 
             S.AddLayer(Name = 'Absorber', Thickness = absorb_thickness, Material = 'W')
 
+            S.SetFrequency(1 / wavelength)
+
+            S2 = S.Clone() # Test this by removing the excitation from the cloned simulation and seeing if there's fields anywhere
+
             S.SetExcitationPlanewave(IncidenceAngles=(config['incidence_angle'], 0), sAmplitude=1/np.sqrt(2), pAmplitude=1/np.sqrt(2), Order=0) # In the real simulation this should be edited to have 1/sqrt(2) amplitude in both directions
 
-            S.SetFrequency(1 / wavelength)
-            
             (forw, back) = S.GetPowerFlux(Layer = 'VacuumAbove', zOffset = 0)
             
             transmitted_power_per_wavelength[i_wavelength] = 1 - np.abs(back)
@@ -118,14 +122,6 @@ for it in range(num_cycles):
             for iz, z in enumerate(z_grtg_space):
                 for ix, x in enumerate(x_grtg_space):
                     grtg_fields[iz, y_pt, ix] = S.GetFields(x, y_pt, z)[0]
-            
-            S2 = S4.New(Lattice = 1, NumBasis = config['image_harmonics'])
-            S2.SetOptions(Verbosity = 0)
-
-            S2.SetMaterial(Name = 'Vacuum', Epsilon = (1 + 0j)**2)
-            S2.SetMaterial(Name = 'W', Epsilon = (ff.w_n[i_wavelength])**2)
-            S2.AddLayer(Name = 'VacuumAbove', Thickness = vacuum_thickness - z_buffer, Material = 'Vacuum')
-            S2.AddLayer(Name = 'Absorber', Thickness = absorb_thickness, Material = 'W')
 
             cartesian_excitation_magnitude = np.mean(np.abs(adj_src_fields[0, 0, :]))
             cartesian_excitation_phase = np.angle(adj_src_fields[0, 0, :])
@@ -134,7 +130,6 @@ for it in range(num_cycles):
             excitations = ff.create_step_excitation(basis = S2.GetBasisSet(), step_values = cartesian_excitations, num_harmonics = config['excite_harmonics'], x_shift = 0, initial_phase = 0, amplitude = 1.0, plot_fourier=False)
             
             S2.SetExcitationExterior(Excitations = tuple(excitations))
-            S2.SetFrequency(1 / wavelength)
 
             adj_grtg_fields = np.zeros((z_grtg_space.shape[0], y_dots, x_grtg_space.shape[0], 3), dtype = complex)
             for iz, z in enumerate(z_grtg_space):
@@ -157,7 +152,7 @@ for it in range(num_cycles):
         fom.backward()
 
         dfom_dflux = transmitted_power_per_wavelength.grad
-        dfom_deps += torch.mean(dfom_dflux.unsqueeze(1).expand(wavelengths.shape[0], num_image_squares) * dflux_deps_all_wavelength, dim = 0) * 1e10
+        dfom_deps += torch.mean(dfom_dflux.unsqueeze(1).expand(wavelengths.shape[0], num_image_squares) * dflux_deps_all_wavelength, dim = 0)
         print(fom, torch.mean(torch.abs(dfom_deps)))
         print(generated_images)
     print(dfom_deps)
