@@ -21,10 +21,10 @@ config = {
         "torch": int(42),
         "numpy": int(42)
     },
-    "learning_rate": float(5e4),
+    "learning_rate": float(1e12),
     "incidence_angle": float(0),
     "excite_harmonics": int(100),
-    "image_harmonics": int(10),
+    "image_harmonics": int(14),
     "num_image_squares": int(10),
     "polarization_angle": float(45),
 }
@@ -153,16 +153,13 @@ for it in range(num_cycles):
 
         dfom_dflux = transmitted_power_per_wavelength.grad
         dfom_deps += torch.mean(dfom_dflux.unsqueeze(1).expand(wavelengths.shape[0], num_image_squares) * dflux_deps_all_wavelength, dim = 0)
-        print(fom, torch.mean(torch.abs(dfom_deps)))
-        print(generated_images)
-    print(dfom_deps)
-    generated_images += dfom_deps.repeat(config['num_images'], 1)/config['num_images']*(config['learning_rate']+50*it) # Should we add a negative here, like in the original material?
+        print(f'FOM: {fom.item()}, gradient avg: {torch.mean(torch.abs(dfom_deps)).item()}')
+        print(f'Image: {generated_images}')
+    corrective_factor = config['learning_rate'] * (1+num_cycles/it)
+    print(f'Corrected gradient: {dfom_deps*corrective_factor}')
+    generated_images -= dfom_deps.repeat(config['num_images'], 1)/config['num_images']*corrective_factor # Should we add a negative here, like in the original material?
     generated_images = torch.clamp(generated_images, 0, 1)
     image_file = os.path.join(log_dir, f'image_values_iteration_{it}.txt')
     with open(image_file, 'w') as f:
         for idx, image in enumerate(generated_images):
             f.write(f'{",".join(map(str, image.detach().numpy()))}\n')
-
-
-
-    
