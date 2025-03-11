@@ -155,7 +155,7 @@ for it in range(num_cycles):
         dfom_deps += torch.mean(dfom_dflux.unsqueeze(1).expand(wavelengths.shape[0], num_image_squares) * dflux_deps_all_wavelength, dim = 0)
         print(f'FOM: {fom.item()}, gradient avg: {torch.mean(torch.abs(dfom_deps)).item()}')
         print(f'Image: {generated_images}')
-    corrective_factor = config['learning_rate'] * (1+num_cycles/it)
+    corrective_factor = config['learning_rate'] * (1+(it+1)/num_cycles)
     print(f'Corrected gradient: {dfom_deps*corrective_factor}')
     generated_images -= dfom_deps.repeat(config['num_images'], 1)/config['num_images']*corrective_factor # Should we add a negative here, like in the original material?
     generated_images = torch.clamp(generated_images, 0, 1)
