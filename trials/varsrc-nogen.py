@@ -152,7 +152,7 @@ for it in range(num_cycles):
             # Gradient calculations WRT FOM
             dflux_deps = 2 * wavelength ** 2 * ff.e_0 * np.real(np.einsum('ijkl,ijkl->ijk', grtg_fields, adj_grtg_fields)) # The negative sign and the 2 in the adjoint source construction can factor out of the real function and the einsum function
             dflux_deps_all_wavelength[i_wavelength] = torch.mean(dflux_deps, dim = 0).squeeze() # This removes the z-dimension and the collapsed y-dimension from this simulation, giving us a gradient of dimension 1 / num_image_squares
-            wavelength_process_time = time.time() - wavelength_process_time_start
+            if timing_field_queries: wavelength_process_time = time.time() - wavelength_process_time_start
             if timing_field_queries: print(f"Full wavelength processing took: {wavelength_process_time:.2f} seconds")
             
         dflux_deps_all_wavelength = torch.tensor(dflux_deps_all_wavelength, requires_grad = True)
@@ -169,11 +169,33 @@ for it in range(num_cycles):
         dfom_deps += torch.mean(dfom_dflux.unsqueeze(1).expand(wavelengths.shape[0], num_image_squares) * dflux_deps_all_wavelength, dim = 0)
         print(f'FOM: {fom.item()}, gradient avg: {torch.mean(torch.abs(dfom_deps)).item()}')
         print(f'Image: {generated_images}')
-    corrective_factor = config['learning_rate'] * (1+(it+1)/num_cycles)
+
+    # Read the live gradient scale from file
+    live_gradient_scale = 1.0  # Default value if file doesn't exist
+    live_gradient_scale_file = Path(ff.home_directory()) / '.LIVE_GRADIENT_SCALE.txt'
+    if live_gradient_scale_file.exists():
+        try:
+            with open(live_gradient_scale_file, 'r') as f:
+                live_gradient_scale = float(f.read().strip())
+        except (ValueError, FileNotFoundError):
+            print("Error reading .LIVE_GRADIENT_SCALE.txt, using default value of 1.0")
+
+    corrective_factor = config['learning_rate'] * (1+(it+1)/num_cycles) * live_gradient_scale
     print(f'Corrected gradient: {dfom_deps*corrective_factor}')
     generated_images -= dfom_deps.repeat(config['num_images'], 1)/config['num_images']*corrective_factor # Should we add a negative here, like in the original material?
     generated_images = torch.clamp(generated_images, 0, 1)
+
     image_file = os.path.join(log_dir, f'image_values_iteration_{it}.txt')
-    with open(image_file, 'w') as f:
-        for idx, image in enumerate(generated_images):
-            f.write(f'{",".join(map(str, image.detach().numpy()))}\n')
+    images_numpy = generated_images.detach().numpy()
+    # Save both the images and the gradient scale in the same file
+    np.savez(
+        image_file,
+        images=images_numpy,
+        gradient_scale=live_gradient_scale
+    )
+
+
+    # image_file = os.path.join(log_dir, f'image_values_iteration_{it}.txt')
+    # with open(image_file, 'w') as f:
+    #     for idx, image in enumerate(generated_images):
+    #         f.write(f'{",".join(map(str, image.detach().numpy()))}\n')
