@@ -6,6 +6,7 @@ This file simulates the optimization of images without an explicit generator, i.
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import ff
@@ -14,6 +15,8 @@ import numpy as np
 import S4
 import torch
 from tqdm import tqdm
+
+timing_field_queries = False
 
 config = {
     "num_images": int(1),
@@ -81,8 +84,7 @@ for it in range(num_cycles):
         dflux_deps_all_wavelength = np.zeros((wavelengths.shape[0], num_image_squares))
         
         for i_wavelength, wavelength in enumerate(tqdm(wavelengths, desc="Processing wavelengths", leave=False)):
-
-    
+            if timing_field_queries: wavelength_process_time_start = time.time()
             S = S4.New(Lattice = 1, NumBasis=config['image_harmonics']) # This sets nonzero harmonics only in a single (x) direction, so we actually have 14 harmonics in that direction
             S.SetOptions(LanczosSmoothing=True)
 
@@ -111,18 +113,23 @@ for it in range(num_cycles):
             (forw, back) = S.GetPowerFlux(Layer = 'VacuumAbove', zOffset = 0)
             
             transmitted_power_per_wavelength[i_wavelength] = 1 - np.abs(back)
-            if homogeneous:
-                continue
-            
+            if homogeneous: continue
+            if timing_field_queries: fields_time_start = time.time()
             adj_src_fields = np.zeros((1, y_dots, x_msrmt_dots), dtype = complex)
+            if timing_field_queries: fields_time = 0
             for ix, x in enumerate(x_msrmt_space):
+                if timing_field_queries: start = time.time()
                 adj_src_fields[0, 0, ix] = S.GetFields(x, y_pt, z_buffer)[0][0] # This computes the electric field. The .25 buffer is to handle edge effects. To obtain the z-flux of the electric field, we need to store the first element of the last dimension via the RHR.
-            
+                if timing_field_queries: fields_time += time.time() - start
+            if timing_field_queries: print(f"First GetFields loop took: {fields_time:.2f} seconds")
             grtg_fields = np.zeros((z_grtg_space.shape[0], y_dots, x_grtg_space.shape[0], 3), dtype = complex)
+            if timing_field_queries: fields_time = 0
             for iz, z in enumerate(z_grtg_space):
                 for ix, x in enumerate(x_grtg_space):
+                    if timing_field_queries: start = time.time()
                     grtg_fields[iz, y_pt, ix] = S.GetFields(x, y_pt, z)[0]
-
+                    if timing_field_queries: fields_time += time.time() - start
+            if timing_field_queries: print(f"Second GetFields loop took: {fields_time:.2f} seconds")
             cartesian_excitation_magnitude = np.mean(np.abs(adj_src_fields[0, 0, :]))
             cartesian_excitation_phase = np.angle(adj_src_fields[0, 0, :])
             cartesian_excitations = cartesian_excitation_magnitude * np.exp(1j * cartesian_excitation_phase)
@@ -132,14 +139,21 @@ for it in range(num_cycles):
             S2.SetExcitationExterior(Excitations = tuple(excitations))
 
             adj_grtg_fields = np.zeros((z_grtg_space.shape[0], y_dots, x_grtg_space.shape[0], 3), dtype = complex)
+            if timing_field_queries: fields_time = 0
             for iz, z in enumerate(z_grtg_space):
                 z -= z_buffer
                 for ix, x in enumerate(x_grtg_space):
+                    if timing_field_queries: start = time.time()
                     adj_grtg_fields[iz, y_pt, ix] = S2.GetFields(x, y_pt, z)[0]
-            
+                    if timing_field_queries: fields_time += time.time() - start
+            if timing_field_queries: print(f"Third GetFields loop took: {fields_time:.2f} seconds") 
+            if timing_field_queries: total_fields_time = time.time() - fields_time_start
+            if timing_field_queries: print(f"Total time for all GetFields operations: {total_fields_time:.2f} seconds")
             # Gradient calculations WRT FOM
             dflux_deps = 2 * wavelength ** 2 * ff.e_0 * np.real(np.einsum('ijkl,ijkl->ijk', grtg_fields, adj_grtg_fields)) # The negative sign and the 2 in the adjoint source construction can factor out of the real function and the einsum function
             dflux_deps_all_wavelength[i_wavelength] = torch.mean(dflux_deps, dim = 0).squeeze() # This removes the z-dimension and the collapsed y-dimension from this simulation, giving us a gradient of dimension 1 / num_image_squares
+            wavelength_process_time = time.time() - wavelength_process_time_start
+            if timing_field_queries: print(f"Full wavelength processing took: {wavelength_process_time:.2f} seconds")
             
         dflux_deps_all_wavelength = torch.tensor(dflux_deps_all_wavelength, requires_grad = True)
 
