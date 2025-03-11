@@ -20,7 +20,7 @@ config = {
         "torch": int(42),
         "numpy": int(42)
     },
-    "learning_rate": float(1e4),
+    "learning_rate": float(5e4),
     "incidence_angle": float(0),
     "excite_harmonics": int(50),
     "image_harmonics": int(10),
@@ -62,9 +62,9 @@ x_grtg_space = np.array([(q+1) / num_image_squares - 1 / (2 * num_image_squares)
 
 generated_images = (torch.rand((config['num_images'], num_image_squares), requires_grad = False))
 homogeneous = False
+generated_images = torch.reshape(torch.tensor([1.0,0.9968297,0.7067914,1.0,0.7684266,1.0,0.70334226,0.9975946,1.0,0.6070011]), (1, 10))
 
 for it in range(num_cycles):
-    avg_fom = 0
 
     with open(fom_file, 'a+') as f:
         f.write(f'\nIteration {it}\n')
@@ -107,7 +107,6 @@ for it in range(num_cycles):
             (forw, back) = S.GetPowerFlux(Layer = 'VacuumAbove', zOffset = 0)
             
             transmitted_power_per_wavelength[i_wavelength] = 1 - np.abs(back)
-
             if homogeneous:
                 continue
             
@@ -152,6 +151,8 @@ for it in range(num_cycles):
         # Need to add scaling binary constraint here
         transmitted_power_per_wavelength = torch.tensor(transmitted_power_per_wavelength, requires_grad=True)
         fom = ff.power_ratio(wavelengths, transmitted_power_per_wavelength, ff.T_e, .726)
+        with open(fom_file, 'a+') as f:
+            f.write(f'Image {image_index} FOM: {fom.item()}\n')
         
         fom.backward()
 
@@ -160,12 +161,12 @@ for it in range(num_cycles):
         print(fom, torch.mean(torch.abs(dfom_deps)))
         print(generated_images)
     print(dfom_deps)
-    generated_images += dfom_deps.repeat(config['num_images'], 1)/config['num_images']*config['learning_rate'] # Should we add a negative here, like in the original material?
+    generated_images += dfom_deps.repeat(config['num_images'], 1)/config['num_images']*(config['learning_rate']+50*it) # Should we add a negative here, like in the original material?
     generated_images = torch.clamp(generated_images, 0, 1)
     image_file = os.path.join(log_dir, f'image_values_iteration_{it}.txt')
     with open(image_file, 'w') as f:
         for idx, image in enumerate(generated_images):
-            f.write(f'Image {idx}: {",".join(map(str, image.detach().numpy()))}\n')
+            f.write(f'{",".join(map(str, image.detach().numpy()))}\n')
 
 
 
