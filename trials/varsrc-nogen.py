@@ -22,13 +22,13 @@ timing_field_queries = False
 config = {
     "num_images": int(1),
     "seeds": {
-        "torch": int(45),
-        "numpy": int(48)
+        "torch": int(48),
+        "numpy": int(45)
     },
     "learning_rate": float(1e12),
     "incidence_angle": float(0),
     "excite_harmonics": int(100),
-    "image_harmonics": int(14),
+    "image_harmonics": int(30),
     "num_image_squares": int(10),
     "polarization_angle": float(45),
 }
@@ -56,7 +56,7 @@ grid_thickness = .473
 absorb_thickness = 1
 
 y_pt = 0
-z_dots, y_dots, x_dots, x_msrmt_dots, num_image_squares = 100, 1, 100, 50, 10
+z_dots, y_dots, x_dots, x_msrmt_dots, num_image_squares = 100, 1, 100, 50, int(config['num_image_squares'])
 z_space = np.linspace(0, vacuum_thickness+grid_thickness+absorb_thickness, z_dots)
 z_grtg_space = z_space[(z_space >= vacuum_thickness) & (z_space <= vacuum_thickness + grid_thickness)]
 z_buffer = .15 # This is for when we offset the measurement later on
@@ -66,7 +66,6 @@ x_msrmt_space = np.array([(q+1)/x_msrmt_dots - 1/(2*x_msrmt_dots) for q in range
 x_grtg_space = np.array([(q+1) / num_image_squares - 1 / (2 * num_image_squares) for q in range(num_image_squares)])
 
 generated_images = (torch.rand((config['num_images'], num_image_squares), requires_grad = False))
-generated_images = torch.tensor(np.load('../logs/def-7b52663a_1/image_values_iteration_66.txt.npz')['images'])
 homogeneous = False
 
 for it in range(num_cycles):
@@ -153,12 +152,12 @@ for it in range(num_cycles):
             if timing_field_queries: total_fields_time = time.time() - fields_time_start
             if timing_field_queries: print(f"Total time for all GetFields operations: {total_fields_time:.2f} seconds")
             # Gradient calculations WRT FOM
-            dflux_deps = 2 * wavelength ** 2 * ff.e_0 * np.real(np.einsum('ijkl,ijkl->ijk', grtg_fields, adj_grtg_fields)) # The negative sign and the 2 in the adjoint source construction can factor out of the real function and the einsum function
+            dflux_deps = 2 * wavelength ** 2 * ff.e_0 * np.real(np.einsum('ijkl,ijkl->ijk', grtg_fields, np.conjugate(adj_grtg_fields))) # The negative sign and the 2 in the adjoint source construction can factor out of the real function and the einsum function
             dflux_deps_all_wavelength[i_wavelength] = torch.mean(dflux_deps, dim = 0).squeeze() # This removes the z-dimension and the collapsed y-dimension from this simulation, giving us a gradient of dimension 1 / num_image_squares
             if timing_field_queries: wavelength_process_time = time.time() - wavelength_process_time_start
             if timing_field_queries: print(f"Full wavelength processing took: {wavelength_process_time:.2f} seconds")
-            S = None
-            S2 = None
+            del S2
+            del S
             
         dflux_deps_all_wavelength = torch.tensor(dflux_deps_all_wavelength, requires_grad = True)
 
@@ -173,7 +172,7 @@ for it in range(num_cycles):
         dfom_dflux = transmitted_power_per_wavelength.grad
         dfom_deps += torch.mean(dfom_dflux.unsqueeze(1).expand(wavelengths.shape[0], num_image_squares) * dflux_deps_all_wavelength, dim = 0)
         print(f'FOM: {fom.item()}, gradient avg: {torch.mean(torch.abs(dfom_deps)).item()}')
-        print(f'Image: {generated_images}')
+        print(f'Image: {generated_images}, gradient: {dfom_deps}')
 
     # Read the live gradient scale from file
     live_gradient_scale = 1.0  # Default value if file doesn't exist

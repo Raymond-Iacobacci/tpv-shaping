@@ -197,6 +197,116 @@ def get_harmonic_index(basis_set, harmonic):
 
     return None  # Return None if the harmonic is not found
 
+def create_step_excitation_fft(basis, step_values, num_harmonics=25, x_shift=0, initial_phase=0, amplitude=1.0, plot_fourier=True):
+    """
+    Creates excitations that replicate a step function pattern in the x-direction using NumPy's FFT.
+    
+    Parameters:
+        basis: The basis set from Ssample.GetBasisSet()
+        step_values: Array of values defining the step function (e.g., [1, -1])
+        num_harmonics: Maximum harmonic to include in the Fourier series
+        x_shift: Shifts the pattern in the x-direction (0-1 range)
+        initial_phase: Initial phase angle in radians for the entire pattern
+        amplitude: Overall amplitude scaling factor
+        plot_fourier: Whether to plot the Fourier series approximation
+        
+    Returns:
+        List of excitation tuples ready for SetExcitationExterior
+    """
+    # Convert to numpy array if not already
+    step_values = np.array(step_values, dtype=complex)
+    N = len(step_values)
+    
+    # Compute FFT
+    fft_result = np.fft.fft(step_values) / N  # Normalize by N
+    
+    # Create initial phase factor
+    phase_factor = np.exp(1j * initial_phase)
+    
+    # Prepare excitations list
+    excitations = []
+    
+    # Plot Fourier series approximation if requested
+    if plot_fourier:
+        # Create a dense x-axis over one period for plotting
+        x = np.linspace(0, 1, 1000)
+        y_orig = np.zeros_like(x, dtype=complex)
+        for j in range(N):
+            mask = (x >= j/N) & (x < (j+1)/N)
+            y_orig[mask] = step_values[j]
+        
+        # Reconstruct signal from selected harmonics
+        y_fourier = np.zeros_like(x, dtype=complex)
+        for k in range(-num_harmonics, num_harmonics+1):
+            k_idx = k % N  # Handle negative indices correctly
+            if k_idx < 0:
+                k_idx += N
+            
+            # Skip harmonics that exceed our limit
+            if abs(k) > num_harmonics:
+                continue
+                
+            # Apply the proper coefficient
+            coef = fft_result[k_idx]
+            y_fourier += coef * np.exp(1j * 2 * np.pi * k * x)
+        
+        # Plot real and imaginary parts
+        plt.figure(figsize=(10, 10))
+        
+        # Real part
+        plt.subplot(2, 1, 1)
+        plt.plot(x, np.real(y_orig), label="Original (Real)", 
+                 drawstyle='steps-post', linewidth=2)
+        plt.plot(x, np.real(y_fourier), label=f"Fourier Approx (Real) (|k| ≤ {num_harmonics})", 
+                 linestyle='--', linewidth=2)
+        plt.title("Fourier Series Approximation (Real Part)")
+        plt.xlabel("x")
+        plt.ylabel("Real f(x)")
+        plt.legend()
+        plt.grid(True)
+        
+        # Imaginary part
+        plt.subplot(2, 1, 2)
+        plt.plot(x, np.imag(y_orig), label="Original (Imaginary)", 
+                 drawstyle='steps-post', linewidth=2)
+        plt.plot(x, np.imag(y_fourier), label=f"Fourier Approx (Imag) (|k| ≤ {num_harmonics})", 
+                 linestyle='--', linewidth=2)
+        plt.title("Fourier Series Approximation (Imaginary Part)")
+        plt.xlabel("x")
+        plt.ylabel("Imaginary f(x)")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+    
+    # Process Fourier coefficients and create excitations
+    for k in range(-num_harmonics, num_harmonics+1):
+        # Find correct index in FFT result array
+        k_idx = k % N
+        if k_idx < 0:
+            k_idx += N
+            
+        # Get coefficient
+        c_k = fft_result[k_idx]
+        
+        # Find the corresponding index in the S4 basis
+        idx = get_harmonic_index(basis, k)
+        
+        if idx is not None:
+            # Apply x-shift if needed
+            if x_shift != 0:
+                # For a shift in real space, multiply by exp(-i*k*x_shift)
+                shift_phase = np.exp(-1j * 2 * np.pi * k * x_shift)
+                c_k *= shift_phase
+            
+            # Apply global phase and amplitude scaling
+            final_amplitude = amplitude * phase_factor * c_k
+            
+            # Add to excitations
+            excitations.append((idx, b'x', final_amplitude))
+    
+    return excitations
+
 
 def create_step_excitation(basis, step_values, num_harmonics=25, x_shift=0, initial_phase=0, amplitude=1.0, plot_fourier=True):
     """
