@@ -15,14 +15,15 @@ import numpy as np
 import S4
 import torch
 from tqdm import tqdm
+import gc
 
 timing_field_queries = False
 
 config = {
     "num_images": int(1),
     "seeds": {
-        "torch": int(42),
-        "numpy": int(42)
+        "torch": int(45),
+        "numpy": int(48)
     },
     "learning_rate": float(1e12),
     "incidence_angle": float(0),
@@ -65,10 +66,12 @@ x_msrmt_space = np.array([(q+1)/x_msrmt_dots - 1/(2*x_msrmt_dots) for q in range
 x_grtg_space = np.array([(q+1) / num_image_squares - 1 / (2 * num_image_squares) for q in range(num_image_squares)])
 
 generated_images = (torch.rand((config['num_images'], num_image_squares), requires_grad = False))
+generated_images = torch.tensor(np.load('../logs/def-7b52663a_1/image_values_iteration_66.txt.npz')['images'])
 homogeneous = False
-# generated_images = torch.reshape(torch.tensor([1.0,0.9968297,0.7067914,1.0,0.7684266,1.0,0.70334226,0.9975946,1.0,0.6070011]), (1, 10))
 
 for it in range(num_cycles):
+    if it % 10 == 9:
+        gc.collect()
 
     with open(fom_file, 'a+') as f:
         f.write(f'\nIteration {it}\n')
@@ -154,6 +157,8 @@ for it in range(num_cycles):
             dflux_deps_all_wavelength[i_wavelength] = torch.mean(dflux_deps, dim = 0).squeeze() # This removes the z-dimension and the collapsed y-dimension from this simulation, giving us a gradient of dimension 1 / num_image_squares
             if timing_field_queries: wavelength_process_time = time.time() - wavelength_process_time_start
             if timing_field_queries: print(f"Full wavelength processing took: {wavelength_process_time:.2f} seconds")
+            S = None
+            S2 = None
             
         dflux_deps_all_wavelength = torch.tensor(dflux_deps_all_wavelength, requires_grad = True)
 
