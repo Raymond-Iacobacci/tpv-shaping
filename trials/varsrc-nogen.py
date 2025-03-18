@@ -22,13 +22,13 @@ timing_field_queries = False
 config = {
     "num_images": int(1),
     "seeds": {
-        "torch": int(48),
-        "numpy": int(45)
+        "torch": int(52),
+        "numpy": int(41)
     },
     "learning_rate": float(1e12),
     "incidence_angle": float(0),
     "excite_harmonics": int(100),
-    "image_harmonics": int(30),
+    "image_harmonics": int(14),
     "num_image_squares": int(10),
     "polarization_angle": float(45),
 }
@@ -69,8 +69,6 @@ generated_images = (torch.rand((config['num_images'], num_image_squares), requir
 homogeneous = False
 
 for it in range(num_cycles):
-    if it % 10 == 9:
-        gc.collect()
 
     with open(fom_file, 'a+') as f:
         f.write(f'\nIteration {it}\n')
@@ -158,6 +156,7 @@ for it in range(num_cycles):
             if timing_field_queries: print(f"Full wavelength processing took: {wavelength_process_time:.2f} seconds")
             del S2
             del S
+            gc.collect()
             
         dflux_deps_all_wavelength = torch.tensor(dflux_deps_all_wavelength, requires_grad = True)
 
