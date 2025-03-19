@@ -10,8 +10,8 @@ import numpy.typing as npt
 import pandas as pd  # type: ignore
 import torch
 
-n_all = np.load('/home/rliacobacci/Downloads/n_allHTMats.npz')
-k_all = np.load('/home/rliacobacci/Downloads/k_allHTMats.npz')
+n_all = np.load('../data/n_allHTMats.npz')
+k_all = np.load('../data/k_allHTMats.npz')
 
 w_n = n_all['arr_0'][:, -1] + k_all['arr_0'][:, -1] * 1j
 aln_n = n_all['arr_0'][:, 17] + k_all['arr_0'][:, 17] * 1j

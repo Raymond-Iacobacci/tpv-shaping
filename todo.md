@@ -5,3 +5,4 @@
 7. Make distinction between binarization gradient scaling and default gradient scaling.
 8. Move the factory function file into the root directory.
 9. Make plotting standardized.
+10. Update paths to all get data from data/ folder.

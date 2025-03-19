@@ -1498,3 +1498,51 @@ FOM Value: 0.27752357721328735
 Tungsten block trial -> block_width=0.5, block_height=0.2, AlN_thickness=0.2
 FOM Value: 0.27749043703079224
 ------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.1
+FOM Value: 0.3488045930862427
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.13076923076923078
+FOM Value: 0.3314455449581146
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.16153846153846155
+FOM Value: 0.2789972722530365
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.19230769230769232
+FOM Value: 0.22278021275997162
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.2230769230769231
+FOM Value: 0.19065254926681519
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.25384615384615383
+FOM Value: 0.18658821284770966
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.2846153846153846
+FOM Value: 0.20463919639587402
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.3153846153846154
+FOM Value: 0.23724040389060974
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.34615384615384615
+FOM Value: 0.2765255868434906
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.3769230769230769
+FOM Value: 0.31530869007110596
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.4076923076923077
+FOM Value: 0.3482716679573059
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.43846153846153846
+FOM Value: 0.3717978298664093
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.46923076923076923
+FOM Value: 0.3827109634876251
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.001, AlN_thickness=0.5
+FOM Value: 0.37731853127479553
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.005, AlN_thickness=0.1
+FOM Value: 0.3515234887599945
+------------------------------
+Tungsten block trial -> block_width=0.01, block_height=0.005, AlN_thickness=0.13076923076923078
+FOM Value: 0.33508360385894775
+------------------------------
