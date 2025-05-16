@@ -1,9 +1,0 @@
-{
-    "seeds": {
-        "torch": 52,
-        "numpy": 41
-    },
-    "incidence_angle": 0.0,
-    "image_harmonics": 20,
-    "polarization_angle": 45.0
-}

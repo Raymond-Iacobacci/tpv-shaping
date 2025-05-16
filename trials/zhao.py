@@ -35,7 +35,8 @@ config = {
     "rectangle_y_half_width": float(0.15),
     "wavelength_start_index": int(0),  # default0
     "wavelength_end_index": int(2649),  # default2649
-    "harmonics": int(400),
+    # "harmonics": int(400),
+    "harmonics": int(5),
     "material": str("AluminumNitride"),
 }
 
@@ -46,8 +47,8 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 ###############################################################################################
 
 
-n_all = np.load('/home/rliacobacci/Downloads/n_allHTMats.npz')
-k_all = np.load('/home/rliacobacci/Downloads/k_allHTMats.npz')
+n_all = np.load('../data/n_allHTMats.npz')
+k_all = np.load('../data/k_allHTMats.npz')
 
 
 def load_refractive_index_file(filepath):
@@ -83,7 +84,7 @@ def interpolate_refractive_indices(filepath):
 
 
 SiO2_n = interpolate_refractive_indices(
-    '/home/rliacobacci/Downloads/SiO2_n.txt')
+    '../data/SiO2_n.txt')
 
 w_n = n_all['arr_0'][:, -1] + k_all['arr_0'][:, -1] * 1j
 aln_n = n_all['arr_0'][:, 17] + k_all['arr_0'][:, 17] * 1j
@@ -103,9 +104,8 @@ for i, wavelength in enumerate(wavelengths[config['wavelength_start_index']:conf
         SiO2_n[int(wavelength*1e3)]**2))
 
     S.AddLayer(Name='AirAbove', Thickness=1, Material='Vacuum')
-    S.AddLayer(Name='TungstenGrid', Thickness=.06, Material='Vacuum')
-    S.SetRegionRectangle(Layer='TungstenGrid', Material='Tungsten', Center=(
-        config['square_x_location'] + config['rectangle_x_half_width'], config['square_y_location'] + config['rectangle_y_half_width']), Halfwidths=(config['rectangle_x_half_width'], config['rectangle_y_half_width']), Angle=0)
+    # S.AddLayer(Name='TungstenGrid', Thickness=.06, Material='Vacuum')
+    # S.SetRegionRectangle(Layer='TungstenGrid', Material='Tungsten', Center=(config['square_x_location'] + config['rectangle_x_half_width'], config['square_y_location'] + config['rectangle_y_half_width']), Halfwidths=(config['rectangle_x_half_width'], config['rectangle_y_half_width']), Angle=0)
     S.AddLayer(Name='SiliconDioxide', Thickness=.06, Material=config['material'])
     S.AddLayer(Name='TungstenBelow', Thickness=1, Material='Tungsten')
     S.AddLayer(Name="AirBelow", Thickness=1, Material='Vacuum')
