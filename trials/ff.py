@@ -30,6 +30,11 @@ k_short = np.load('../data/k_allHTMats.npz')
 cao_n = n_short['arr_0'][:, 4] + k_short['arr_0'][:, 4]
 mgo_n = n_short['arr_0'][:, 5] + k_short['arr_0'][:, 5]
 
+hfb2_n = n_short['arr_0'][:, 36] + k_short['arr_0'][:, 36]
+
+zro2_n = n_short['arr_0'][:, 16] + k_short['arr_0'][:, 16]
+zrb2_n = n_short['arr_0'][:, 39] + k_short['arr_0'][:, 39]
+
 def IQE(wavelength, e_g):
     lambda_g = np.ceil(1240 / e_g) / 1000.0
 

@@ -145,12 +145,11 @@ config = {
     "n_grating_harmonics": int(20), # >= config['n_incidence_harmonics'], this tells you how many you need to set
     "n_grating_elements": int(22),
     "ang_polarization": float(0), # Better angle for optimization (generally good at showing what can happen in two dimensions with unpolarized metamaterials)
-    "learning_rate": float(1),
+    # "learning_rate": float(1e-5)
     "n_gratings": int(10),
     "n_update_gratings": int(5),
-    "bias": 1e-3,
-    "logging": True,
-    "optimizer": True
+    "bias": 1e-5,
+    "logging": False,
 }
 if config["logging"]:
     root_log_dir = os.path.join(ff.home_directory(), 'logs', 'gradient-descent-on-grating-t')
@@ -195,7 +194,7 @@ x_measurement_space = make_measurement_grid(L = L, n_cells = x_density, k = conf
 z_space = np.linspace(0, .5 + 1.6 + .473 + 1, 30)
 z_measurement_space = z_space[(z_space >= .5) & (z_space <= .5 + 1.6)] # Takes only the relevant items
 
-def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, index: int) -> torch.Tensor:
+def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, index: int, depth) -> torch.Tensor:
 
     transmitted_power = []
     indices_used = []
@@ -210,17 +209,21 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, index: i
         sample_mask[i_wl] = True
         S = S4.New(Lattice = L, NumBasis = config['n_grating_harmonics'])
         S.SetMaterial(Name = 'W', Epsilon = ff.w_n[i_wl]**2)
+        S.SetMaterial(Name = 'ZrB2', Epsilon = ff.zrb2_n[i_wl]**2)
+        S.SetMaterial(Name = 'ZrO2', Epsilon = ff.zro2_n[i_wl]**2)
         S.SetMaterial(Name = 'Vac', Epsilon = 1)
         S.SetMaterial(Name = 'AlN', Epsilon = ff.aln_n[i_wl]**2)
 
         S.AddLayer(Name = 'VacuumAbove', Thickness = .5, Material = 'Vac')
-        S.AddLayer(Name = 'Grating', Thickness = .473, Material = 'Vac')
+        S.AddLayer(Name = 'Grating', Thickness = depth, Material = 'Vac')
         
         for ns in range(grating.shape[-1]):
-            S.SetMaterial(Name = f'sq{ns+1}', Epsilon = grating[ns].item() * (ff.cao_n[i_wl]**2-1)+1)
+            # S.SetMaterial(Name = f'sq{ns+1}', Epsilon = grating[ns].item() * (ff.cao_n[i_wl]**2-1)+1)
+            S.SetMaterial(Name = f'sq{ns+1}', Epsilon = grating[ns].item() * (ff.zro2_n[i_wl]**2-1)+1)
             S.SetRegionRectangle(Layer = 'Grating', Material = f'sq{ns+1}', Center = (((ns+1)/grating.shape[-1] - 1/(2*grating.shape[-1]))*L, .5*L), Halfwidths = ((1/(2*grating.shape[-1])*L), .5*L), Angle = 0)
 
-        S.AddLayer(Name = 'Ab', Thickness = 1, Material = 'W')
+        # S.AddLayer(Name = 'Ab', Thickness = 1, Material = 'W')
+        S.AddLayer(Name = 'Ab', Thickness = 1, Material = 'ZrB2')
         S.SetFrequency(1 / wl)
 
         S_adj = S.Clone()
@@ -261,7 +264,8 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, index: i
     interpolated_ppw = torch.tensor([i[1] for i in interpolated_data], requires_grad = True)
     interpolated_ppw.retain_grad()
     transmitted_power = torch.tensor(transmitted_power, requires_grad = True)
-
+    plt.plot(interpolated_ppw.detach().numpy())
+    plt.show()
     idx = sample_mask.nonzero(as_tuple = True)[0]
     fom = ff.power_ratio(wavelengths[idx], interpolated_ppw[idx], ff.T_e, .726)
     fom.backward()
@@ -288,41 +292,19 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, index: i
 n_gratings = config['n_gratings']
 n_update_gratings = config['n_update_gratings']
 n_epochs = 1000
-if not config['optimizer']:
+# opt = torch.optim.AdamW([grating], lr = config['learning_rate'] if 'learning_rate' in config.keys() else 1e-3, maximize=True) # Temporary resuming code
+gratings = [torch.rand((config['n_grating_elements'],),) for _ in range(n_gratings)]
+gratings[0][:5] = 1
 
-    gratings = [torch.rand((config['n_grating_elements'],),) for _ in range(n_gratings)]
-
+for epoch in range(n_epochs):
+    gradient = torch.zeros(size = (gratings[0].shape[-1],))
+    updating_grating_indices = random.sample(range(n_gratings), n_update_gratings)
+    # for i in updating_grating_indices:
+    for depth in np.arange(0.01, 0.09, step = 0.01):
+        gradient += gradient_per_image(gratings[0], L, config['ang_polarization'], 0, depth)
+        # print(f"Gradient: {gradient}")
+    gradient /= n_gratings
     for i in range(n_gratings):
-        x = gradient_per_image(gratings[i], L, config['ang_polarization'], i)
-        # print(f'Gradient: {x}')
-        # print(f'Bias: {config['bias'] * (0.5 - gratings[i]) ** 2}')
+        gratings[i] += gradient
 
-    for epoch in range(n_epochs):
-        gradient = torch.zeros(size = (gratings[0].shape[-1],))
-        updating_grating_indices = random.sample(range(n_gratings), n_update_gratings)
-        # for i in updating_grating_indices:
-        for i in range(n_gratings):
-            gradient += gradient_per_image(gratings[i], L, config['ang_polarization'], i)
-            # print(f"Gradient: {gradient}")
-        gradient /= n_gratings
-        for i in range(n_gratings):
-            gratings[i] += gradient
-
-else:
-    gratings = [torch.nn.Parameter(torch.rand((config['n_grating_elements'],),)) for _ in range(n_gratings)]
-    opt = torch.optim.Adam(gratings, lr = config.get('learning_rate', 1e-3))
-    for epoch in range(n_epochs):
-        opt.zero_grad()
-        grads = []
-        for i, gr in enumerate(gratings):
-            dfom_deps = gradient_per_image(gr, L, config['ang_polarization'], i)
-            grads.append(dfom_deps)
         
-        avg_grad = torch.stack(grads, dim = 0).mean(dim = 0)
-
-        for param in gratings:
-            param.grad = -avg_grad.clone()
-        opt.step()
-        with torch.no_grad():
-            for param in gratings:
-                param.data.clamp_(0.0, 1.0)
