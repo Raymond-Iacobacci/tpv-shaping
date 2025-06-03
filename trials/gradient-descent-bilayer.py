@@ -201,13 +201,13 @@ for epoch in range(n_epochs):
         S.SetMaterial(Name = 'AlN', Epsilon = ff.aln_n[i_wl]**2)
 
         S.AddLayer(Name = 'VacuumAbove', Thickness = .5, Material = 'Vac')
-        S.AddLayer(Name = 'Grating', Thickness = .473, Material = 'Vac')
+        # S.AddLayer(Name = 'Grating', Thickness = .473, Material = 'Vac')
         
-        for ns in range(grating.shape[-1]):
-            S.SetMaterial(Name = f'sq{ns+1}', Epsilon = grating[ns].item() * (ff.aln_n[i_wl]**2-1)+1)
-            S.SetRegionRectangle(Layer = 'Grating', Material = f'sq{ns+1}', Center = (((ns+1)/grating.shape[-1] - 1/(2*grating.shape[-1]))*1, .5*L), Halfwidths = ((1/(2*grating.shape[-1])*1), .5*L), Angle = 0)
+        # for ns in range(grating.shape[-1]):
+        #     S.SetMaterial(Name = f'sq{ns+1}', Epsilon = grating[ns].item() * (ff.aln_n[i_wl]**2-1)+1)
+        #     S.SetRegionRectangle(Layer = 'Grating', Material = f'sq{ns+1}', Center = (((ns+1)/grating.shape[-1] - 1/(2*grating.shape[-1]))*1, .5*L), Halfwidths = ((1/(2*grating.shape[-1])*1), .5*L), Angle = 0)
 
-        # S.AddLayer(Name = 'Substrate', Thickness = .473, Material = 'AlN')
+        S.AddLayer(Name = 'Substrate', Thickness = .473, Material = 'AlN')
         S.AddLayer(Name = 'Ab', Thickness = 1, Material = 'W')
         S.SetFrequency(1 / wl)
 
@@ -217,6 +217,7 @@ for epoch in range(n_epochs):
         (forw, back) = S.GetPowerFlux(Layer = 'VacuumAbove', zOffset = 0) # We don't need to set the zOffset to the z_buff value because the power flux is the same through both points. The angle is different, yes, but that is not what is being measured in this line.
         back_t = torch.as_tensor(back).abs()
         transmitted_power.append(1 - back_t)
+        continue
 
         adj_fields = np.zeros((1, 1, n_x_measurement_pts), dtype = complex)
         for ix, x in enumerate(x_measurement_space):
@@ -252,6 +253,8 @@ for epoch in range(n_epochs):
 
     fom = ff.power_ratio(wavelengths, interpolated_ppw, ff.T_e, .726)
     fom.backward()
+
+    torch.save(interpolated_ppw, "emissivity.pt")
 
     plt.plot(wavelengths, interpolated_ppw.detach())
     plt.xlabel('Wavelength (microns)')

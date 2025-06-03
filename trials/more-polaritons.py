@@ -129,16 +129,16 @@ config = {
         "numpy": int(41),
     },
     "incidence_angle": float(0),
-    # "image_harmonics": int(361),
-    "image_harmonics": int(5),
+    "image_harmonics": int(361),
+    # "image_harmonics": int(5),
     "polarization_angle": float(45)
 }
 base_log_dir = os.path.join(ff.home_directory(), "logs/declans-bilayer")
 os.makedirs(base_log_dir, exist_ok=True)
 np.random.seed(config['seeds']['numpy'])
 
-# wavelengths = torch.linspace(.350, 3, 2651)
-wavelengths = torch.linspace(.22, 5, 4781)
+wavelengths = torch.linspace(.350, 3, 2651)
+# wavelengths = torch.linspace(.22, 5, 4781)
 exclude_wavelengths = torch.tensor([.5, 1.])
 
 alphabet = string.ascii_letters + string.digits   # A–Z a–z 0–9
@@ -156,11 +156,11 @@ indices_used = []
 for i_wavelength, wavelength in enumerate(tqdm(wavelengths, desc="Processing wavelengths", leave=False)):
 # with assign_variables(i_wavelength=10, wavelength=.360) as (i_wavelength, wavelength):
     # if wavelength.item() in exclude_wavelengths or (i_wavelength % 2600 != 0) or i_wavelength == 0:
-    if wavelength.item() in exclude_wavelengths:# or i_wavelength % 80 != 0:
+    if wavelength.item() in exclude_wavelengths or i_wavelength % 10 != 0:
         continue
     indices_used.append(i_wavelength)
-    L=2.2
-    L1 = 1.3
+    L=1.1
+    L1 = 1.5
     r0=.2
     tW=.07
     gap=.03
@@ -168,31 +168,31 @@ for i_wavelength, wavelength in enumerate(tqdm(wavelengths, desc="Processing wav
     S = S4.New(Lattice = ((L, 0), (0, L)), NumBasis=config['image_harmonics'])
 
     S.SetMaterial(Name='Vacuum', Epsilon=(1+0j)**2)
-    S.SetMaterial(Name='W', Epsilon=(ff.w_n[i_wavelength])**2)    # Simple approximate usage
-    S.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wavelength])**2)
+    S.SetMaterial(Name='W', Epsilon=(ff.w_n[i_wavelength+130])**2)    # Simple approximate usage
+    S.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wavelength+130])**2)
     S.AddLayer(Name = 'VacuumAbove', Thickness = .5, Material = 'Vacuum')
     # S.AddLayer(Name = 'Grid0', Thickness = .5, Material = 'Vacuum')
-    # S.AddLayer(Name = 'Grid', Thickness = 1.6, Material = 'Vacuum') #2.2
+    S.AddLayer(Name = 'Grid', Thickness = 1.6, Material = 'Vacuum') #2.2
     # This setup doesn't extend all of each way or the other because we aren't using the flat L
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L, .5*L), Halfwidths = (.05*L1, .5*L), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1*2, .5*L), Halfwidths = (.05*L1, .5*L), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1*4, .5*L), Halfwidths = (.05*L1, .5*L), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L, .5*L), Halfwidths = (.05*L1, .5*L), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1*2, .5*L), Halfwidths = (.05*L1, .5*L), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1*4, .5*L), Halfwidths = (.05*L1, .5*L), Angle = 0)
 
-    # edge = .5*L+(.05+.02+.05)*L1*2+.05*L1
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((.5*L-.05*L1)/2, .5*L), Halfwidths = ((.5*L - .05*L1)/2, .05*L1), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1, .5*L), Halfwidths = (.01*L1, .05*L1), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1*3, .5*L), Halfwidths = (.01*L1, .05*L1), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((L+edge)/2, .5*L), Halfwidths = ((L-edge)/2, .05*L1), Angle = 0)
+    edge = .5*L+(.05+.02+.05)*L1*2+.05*L1
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((.5*L-.05*L1)/2, .5*L), Halfwidths = ((.5*L - .05*L1)/2, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1, .5*L), Halfwidths = (.01*L1, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1*3, .5*L), Halfwidths = (.01*L1, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((L+edge)/2, .5*L), Halfwidths = ((L-edge)/2, .05*L1), Angle = 0)
 
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((.5*L-.05*L1)/2, .5*L + (.05+.01)*L1*2), Halfwidths = ((.5*L - .05*L1)/2, .05*L1), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1, .5*L + (.05+.01)*L1*2), Halfwidths = (.01*L1, .05*L1), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1*3, .5*L + (.05+.01)*L1*2), Halfwidths = (.01*L1, .05*L1), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((L+edge)/2, .5*L + (.05+.01)*L1*2), Halfwidths = ((L-edge)/2, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((.5*L-.05*L1)/2, .5*L + (.05+.01)*L1*2), Halfwidths = ((.5*L - .05*L1)/2, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1, .5*L + (.05+.01)*L1*2), Halfwidths = (.01*L1, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1*3, .5*L + (.05+.01)*L1*2), Halfwidths = (.01*L1, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((L+edge)/2, .5*L + (.05+.01)*L1*2), Halfwidths = ((L-edge)/2, .05*L1), Angle = 0)
 
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((.5*L-.05*L1)/2, .5*L + (.05+.01)*L1*4), Halfwidths = ((.5*L - .05*L1)/2, .05*L1), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1, .5*L + (.05+.01)*L1*4), Halfwidths = (.01*L1, .05*L1), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1*3, .5*L + (.05+.01)*L1*4), Halfwidths = (.01*L1, .05*L1), Angle = 0)
-    # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((L+edge)/2, .5*L + (.05+.01)*L1*4), Halfwidths = ((L-edge)/2, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((.5*L-.05*L1)/2, .5*L + (.05+.01)*L1*4), Halfwidths = ((.5*L - .05*L1)/2, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1, .5*L + (.05+.01)*L1*4), Halfwidths = (.01*L1, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.5*L+(.05+.01)*L1*3, .5*L + (.05+.01)*L1*4), Halfwidths = (.01*L1, .05*L1), Angle = 0)
+    S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = ((L+edge)/2, .5*L + (.05+.01)*L1*4), Halfwidths = ((L-edge)/2, .05*L1), Angle = 0)
 
     # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.56*L, .56*L), Halfwidths = (.01*L1, .01*L1), Angle = 0)
     # S.SetRegionRectangle(Layer = 'Grid', Material = f'W', Center = (.56*L, .68*L), Halfwidths = (.01*L1, .01*L1), Angle = 0)
