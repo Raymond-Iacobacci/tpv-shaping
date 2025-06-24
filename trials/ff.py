@@ -505,7 +505,7 @@ e_0 = 8.8541878128e-12
 T_PV = 300  # K PV temperature
 T_e = 2073.15  # K emitter temperature
 
-
+ 
 def Blackbody(lambda_i, T):
     return (2*h*c**2) / ((np.exp((h*c)/(k_B*T*lambda_i*1e-6))-1)*lambda_i**5)*1e14
 

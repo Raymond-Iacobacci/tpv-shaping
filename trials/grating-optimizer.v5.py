@@ -425,6 +425,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, index: i
     dflux_deps = torch.tensor(dflux_deps, requires_grad = True) # Add in the gradient to start the backpropagation step
     data = [(indices_used[i], transmitted_power[i]) for i in range(len(indices_used))]
     interpolated_data = interpolate_dataset(data, extend = 0, poly_order = 1) # Need to change to use torch.nn.functional.interpolate
+
     interpolated_ppw = torch.tensor([i[1] for i in interpolated_data], requires_grad = True)
     interpolated_ppw.retain_grad()
     transmitted_power = torch.tensor(transmitted_power, requires_grad = True)
@@ -432,13 +433,6 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, index: i
     idx = sample_mask.nonzero(as_tuple = True)[0]
     fom = ff.power_ratio(wavelengths[idx], interpolated_ppw[idx], ff.T_e, .726)
     fom.backward()
-
-    # plt.plot(dflux_deps[80].detach())
-    # plt.plot(dflux_deps[160].detach())
-    # plt.plot(dflux_deps[240].detach())
-    # plt.show()
-    # plt.plot(interpolated_ppw.detach())
-    # plt.show()
 
     dfom_dflux = interpolated_ppw.grad
     plt.plot(means)
