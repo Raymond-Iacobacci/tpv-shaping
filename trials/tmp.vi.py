@@ -59,7 +59,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
 
     dflux = torch.zeros((2, n_x_pts))
     power = []
-    N = 5
+    N = 13
     for i_wl, wl in enumerate(wavelengths[p:p + 1]):
         S = S4.New(Lattice=L, NumBasis=N)
         S.SetMaterial(Name='W',   Epsilon=ff.w_n[i_wl + p + 130]**2)
@@ -132,7 +132,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
         S_adj_neg.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl + p + 130]**2 - 1) * grating[0].item() + 1)
         S_adj_neg.AddLayer(Name='VacuumAbove', Thickness=vac_depth, Material='Vac')
         S_adj_neg.AddLayer(Name='Grating', Thickness=depth, Material='Vac')
-        S_adj_neg.SetRegionRectangle(Layer = 'Grating', Material = 'AlN', Center = (L-L/2, L/2), Halfwidths = (L/4, L/2), Angle = 0)
+        S_adj_neg.SetRegionRectangle(Layer = 'Grating', Material = 'AlN', Center = (L-L/2, L/2), Halfwidths = (L/3, L/2), Angle = 0)
         S_adj_neg.AddLayer(Name='Ab', Thickness=1.0, Material='W')
         S_adj_neg.SetFrequency(1.0 / wl)
         neg_excitations = []

@@ -55,7 +55,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, i):
     power = []
 
     for i_wl, wl in enumerate(wavelengths[p:p+1]):
-        S = S4.New(Lattice=L, NumBasis=5)
+        S = S4.New(Lattice=L, NumBasis=13)
         S.SetMaterial(Name='W',   Epsilon=(ff.w_n[i_wl+p+130]**2-1)+1)
         S.SetMaterial(Name='Vac', Epsilon=1)
         S.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl+p+130]**2-1)*i+1)

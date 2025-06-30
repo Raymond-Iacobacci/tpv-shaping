@@ -14,6 +14,99 @@ from tqdm import tqdm
 import sys
 import argparse
 
+def interpolate_dataset(data, extend=0, poly_order=1):
+    """
+    Interpolate a dataset of (x,y) pairs, where x are integers, using polynomial interpolation.
+    
+    Args:
+        data: List of (x,y) tuples where x are integers
+        extend: Number of points to extend beyond max(x)
+        poly_order: Order of the polynomial to use for interpolation (1=linear, 2=quadratic, etc.)
+                    Will automatically reduce order if not enough points are available
+    
+    Returns:
+        List of (x,y) tuples with interpolated and extended values
+    """
+    # Sort data by x values
+    sorted_data = sorted(data, key=lambda point: point[0])
+    
+    # Extract x and y values
+    x_values = [point[0] for point in sorted_data]
+    y_values = [point[1] for point in sorted_data]
+    
+    # Find min and max x values
+    min_x = min(x_values)
+    max_x = max(x_values)
+    
+    # Create a dictionary from original data for easy lookup
+    data_dict = {x: y for x, y in sorted_data}
+    
+    # Ensure we have enough points for the polynomial order
+    actual_poly_order = min(poly_order, len(sorted_data) - 1)
+    if actual_poly_order != poly_order:
+        print(f"Warning: Reduced polynomial order from {poly_order} to {actual_poly_order} due to insufficient data points")
+    
+    result = []
+    
+    # If we have enough points for polynomial interpolation
+    if len(sorted_data) > 1:
+        if actual_poly_order == 1:
+            # Linear interpolation (original method)
+            for x in range(min_x, max_x + 1):
+                if x in data_dict:
+                    result.append((x, data_dict[x]))
+                else:
+                    # Find closest points before and after x
+                    left_idx = 0
+                    while left_idx < len(x_values) - 1 and x_values[left_idx + 1] <= x:
+                        left_idx += 1
+                    
+                    right_idx = len(x_values) - 1
+                    while right_idx > 0 and x_values[right_idx - 1] >= x:
+                        right_idx -= 1
+                    
+                    # Interpolate y value
+                    x1, y1 = x_values[left_idx], y_values[left_idx]
+                    x2, y2 = x_values[right_idx], y_values[right_idx]
+                    
+                    y = y1 + (x - x1) * (y2 - y1) / (x2 - x1)
+                    result.append((x, y))
+        else:
+            # Polynomial interpolation
+            coeffs = np.polyfit(x_values, y_values, actual_poly_order)
+            
+            # Interpolate for all integer points
+            for x in range(min_x, max_x + 1):
+                if x in data_dict:
+                    # Use original data point if available
+                    result.append((x, data_dict[x]))
+                else:
+                    # Use polynomial to interpolate
+                    y = np.polyval(coeffs, x)
+                    result.append((x, y))
+    else:
+        # Just one point, can't interpolate
+        result = sorted_data.copy()
+    
+    # Extend beyond max_x if requested (always using linear extension)
+    if extend > 0 and len(x_values) >= 2:
+        # Get the last two points to determine the slope for extension
+        second_to_last_x = x_values[-2]
+        second_to_last_y = y_values[-2]
+        last_x = x_values[-1]
+        last_y = y_values[-1]
+        
+        # Calculate slope
+        slope = (last_y - second_to_last_y) / (last_x - second_to_last_x)
+        
+        # Add extended points
+        for i in range(1, extend + 1):
+            x = max_x + i
+            y = last_y + slope * i
+            result.append((x, y))
+    
+    return result
+
 config = {
     "seeds": {
         "torch": int(92),
@@ -48,17 +141,17 @@ class Generator(nn.Module):
 # --------------------------------------------------
 # Physics-based gradient + full-field sampling
 # --------------------------------------------------
-def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
+def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,depth: float,
                        plot_fields: bool = False):
     p = 20
     n_grating_elements = grating.shape[-1]
-    x_density = 30
+    x_density = 5
     n_x_pts = x_density * n_grating_elements
-    depth = 0.7
+    # depth = 0.7
     vac_depth = 0.00
-    z_meas = np.linspace(vac_depth, vac_depth + depth, 70)
-    # measurement volume for gradient: within grating layer
-    # z_meas = z_space[(z_space >= vac_depth) & (z_space <= vac_depth + depth)]
+    exclude_wl = [.5, 1]
+    jump = 80
+    z_meas = np.linspace(vac_depth, vac_depth + depth, 30)
     wavelengths = torch.linspace(0.35, 3.0, 2651)
     z_buf = 0. # irrespective to this in homogeneous case but...
 
@@ -70,10 +163,16 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
 
     x_space = make_grid(L, n_cells=x_density, k=n_grating_elements)
 
-    dflux = torch.zeros((2, n_x_pts))
+    dflux = torch.zeros((len(wavelengths), n_x_pts))
     power = []
-    N = 25
-    for i_wl, wl in enumerate(wavelengths):
+    N = 13
+    indices_used = []
+    wl_mask = torch.zeros_like(wavelengths, dtype=torch.bool)
+    for i_wl, wl in enumerate(tqdm(wavelengths, desc="Wavelengths", leave = False)):
+        if wl.item() in exclude_wl or i_wl % jump != 0:
+            continue
+        indices_used.append(i_wl)
+        wl_mask[i_wl] = True
         S = S4.New(Lattice=L, NumBasis=N)
         S.SetMaterial(Name='W',   Epsilon=ff.w_n[i_wl + 130]**2)
 
@@ -83,6 +182,9 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
         S.AddLayer(Name='VacuumAbove', Thickness=vac_depth, Material='Vac')
         S.AddLayer(Name='Grating', Thickness=depth, Material='Vac')
         S.SetRegionRectangle(Layer = 'Grating', Material = 'AlN', Center = (L/2, L/2), Halfwidths = (L/4, L/2), Angle = 0)
+        for ns in range(len(grating)):
+            S.SetMaterial(Name = f'SquareMat-{ns+1}', Epsilon = grating[ns].item() * (ff.aln_n[i_wl+130]**2-1)+1)
+            S.SetRegionRectangle(Layer = 'Grating', Material = f'SquareMat-{ns+1}', Center = (((ns+1) / len(grating) - 1 / (2 * len(grating))) * L, .5), Halfwidths = ((1 / (2 * len(grating))*L), .5), Angle = 0)
         S.AddLayer(Name='Ab', Thickness=1.0, Material='W')
         S.SetFrequency(1.0 / wl)
         S.SetExcitationPlanewave((0, 0),
@@ -90,7 +192,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
                                  pAmplitude=np.sin(ang_pol * np.pi/180),
                                  Order=0)
         forw, back = S.GetPowerFlux('VacuumAbove', zOffset=0)
-        power.append(np.abs(back))
+        power.append(1-np.abs(back))
 
         fwd_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
         for iz, z in enumerate(z_meas):
@@ -121,60 +223,63 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
         basis = S_adj_pos.GetBasisSet() # Removes the repeated calls
         
         pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] > 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
-        # pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] == 1]
-        k0 = 2 * np.pi / wl.item()
-        pos_mag = 0
-        for i, raw_amp in enumerate(back_amp):
-            if i not in pos_harmonics:
-                continue
-            corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
-            # if i == 3:
-            #     print(raw_amp)
-            pos_excitations.append((basis[i][0]+1, b'y', corr_amp))
-            pos_mag += np.abs(corr_amp) ** 2
-        S_adj_pos.SetExcitationExterior(tuple(pos_excitations))
-
         pos_adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
-        for iz, z in enumerate(z_meas):
-            for ix, x in enumerate(x_space):
-                pos_adj_meas[iz, 0, ix] = S_adj_pos.GetFields(x, 0, z)[0]
+        # pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] == 1]
+        if pos_harmonics:
+            k0 = 2 * np.pi / wl.item()
+            pos_mag = 0
+            for i, raw_amp in enumerate(back_amp):
+                if i not in pos_harmonics:
+                    continue
+                corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
+                pos_excitations.append((basis[i][0]+1, b'y', corr_amp))
+                pos_mag += np.abs(corr_amp) ** 2
+                S_adj_pos.SetExcitationExterior(tuple(pos_excitations))
 
-        S_adj_neg = S4.New(Lattice = L, NumBasis = N)
-        S_adj_neg.SetMaterial(Name='W',   Epsilon=ff.w_n[i_wl + p + 130]**2)
-        S_adj_neg.SetMaterial(Name='Vac', Epsilon=1)
-        S_adj_neg.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl + p + 130]**2 - 1) * grating[0].item() + 1)
-        S_adj_neg.AddLayer(Name='VacuumAbove', Thickness=vac_depth, Material='Vac')
-        S_adj_neg.AddLayer(Name='Grating', Thickness=depth, Material='Vac')
-        S_adj_neg.SetRegionRectangle(Layer = 'Grating', Material = 'AlN', Center = (L-L/2, L/2), Halfwidths = (L/4, L/2), Angle = 0)
-        S_adj_neg.AddLayer(Name='Ab', Thickness=1.0, Material='W')
-        S_adj_neg.SetFrequency(1.0 / wl)
+                for iz, z in enumerate(z_meas):
+                    for ix, x in enumerate(x_space):
+                        pos_adj_meas[iz, 0, ix] = S_adj_pos.GetFields(x, 0, z)[0]
+
         neg_excitations = []
         neg_harmonics = [ i for i in range(len(basis)) if basis[i][0] < 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
-        # neg_harmonics = [ i for i in range(len(basis)) if basis[i][0] == -1]
-        neg_mag = 0
-        for i, raw_amp in enumerate(back_amp):
-            if i not in neg_harmonics:
-                continue
-            corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
-            neg_excitations.append((-basis[i][0]+1, b'y', corr_amp))
-            neg_mag += np.abs(corr_amp) ** 2
-        if neg_excitations:
-            S_adj_neg.SetExcitationExterior(tuple(neg_excitations))
-
         neg_adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
-        for iz, z in enumerate(z_meas):
-            for ix, x in enumerate(x_space):
-                # neg_adj_meas[iz, 0, ix] = S_adj_neg.GetFields(x, 0, z)[0]
-                neg_adj_meas[iz, 0, ix] = pos_adj_meas[iz, 0, -1-ix]
+        if neg_harmonics:
+            S_adj_neg = S4.New(Lattice = L, NumBasis = N)
+            S_adj_neg.SetMaterial(Name='W',   Epsilon=ff.w_n[i_wl + 130]**2)
+            S_adj_neg.SetMaterial(Name='Vac', Epsilon=1)
+            S_adj_neg.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl + 130]**2 - 1) * grating[0].item() + 1)
+            S_adj_neg.AddLayer(Name='VacuumAbove', Thickness=vac_depth, Material='Vac')
+            S_adj_neg.AddLayer(Name='Grating', Thickness=depth, Material='Vac')
+            for ns in range(len(grating)):
+                S_adj_neg.SetMaterial(Name = f'SquareMat-{ns+1}', Epsilon = grating[ns].item() * (ff.aln_n[i_wl+130]**2-1)+1)
+                S_adj_neg.SetRegionRectangle(Layer = 'Grating', Material = f'SquareMat-{ns+1}', Center = (L - ((ns+1) / len(grating) - 1 / (2 * len(grating))) * L, .5), Halfwidths = ((1 / (2 * len(grating))*L), .5), Angle = 0) # Flip about x=L/2
+            S_adj_neg.AddLayer(Name='Ab', Thickness=1.0, Material='W')
+            S_adj_neg.SetFrequency(1.0 / wl)
+
+            # neg_harmonics = [ i for i in range(len(basis)) if basis[i][0] == -1]
+            neg_mag = 0
+            for i, raw_amp in enumerate(back_amp):
+                if i not in neg_harmonics:
+                    continue
+                corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
+                neg_excitations.append((-basis[i][0]+1, b'y', corr_amp))
+                neg_mag += np.abs(corr_amp) ** 2
+                S_adj_neg.SetExcitationExterior(tuple(neg_excitations))
+
+            for iz, z in enumerate(z_meas):
+                for ix, x in enumerate(x_space):
+                    neg_adj_meas[iz, 0, ix] = S_adj_neg.GetFields(x, 0, z)[0]
+                    # neg_adj_meas[iz, 0, ix] = pos_adj_meas[iz, 0, -1-ix]
+            del S_adj_neg
         rot = np.e ** (1j/2*np.pi) # Use this from homogeneous tests
         term = k0 * torch.real(
             torch.einsum('ijkl,ijkl->ijk',
                          torch.as_tensor(fwd_meas),
-                         torch.as_tensor(zero_adj_meas + 1. * pos_adj_meas + 1. * neg_adj_meas)*rot) # This rotation factor is equivalent to taking the -imaginary value of the system
+                         torch.as_tensor(zero_adj_meas + pos_adj_meas + neg_adj_meas)*rot) # This rotation factor is equivalent to taking the -imaginary value of the system
         )
         dz = (depth) / len(z_meas)
-        dflux[i_wl] = term.sum(dim=0).squeeze() * dz * L / n_x_pts
-        dflux[i_wl] = dflux[i_wl] * (ff.aln_n[i_wl + p + 130]**2 - 1) # HERE IT IS!
+        dflux[i_wl] = term.mean(dim=0).squeeze() * dz * L / n_x_pts
+        dflux[i_wl] = dflux[i_wl] * (ff.aln_n[i_wl+130]**2 - 1) # HERE IT IS!
 
         if plot_fields:
             z_space = np.linspace(0, 1+vac_depth + depth, 30)
@@ -219,47 +324,43 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
             plt.tight_layout()
             plt.show()
 
-        del S, S_adj_neg, S_adj_pos
-    # print(dflux/(ff.aln_n[0 + p + 130]**2 - 1) )
-    return (torch.sum(dflux[0][9:22])), power[0]
+        del S, S_adj_pos
+    n_wl, total_pts = dflux.shape
 
-# --------------------------------------------------
-# Main: scan & plot
-# --------------------------------------------------
-def main():
-    parser = argparse.ArgumentParser(description="Scan gradient and optionally plot full fields")
-    parser.add_argument('--plot-fields', action='store_true',
-                        help='Plot full-field forward and adjoint E-fields')
-    args = parser.parse_args()
+    dflux = torch.tensor(dflux, requires_grad = True)
+    power = torch.tensor(power, requires_grad = True)
+    power_data = [(indices_used[i], power[i]) for i in range(len(indices_used))]
+    interpolated_power = torch.tensor([i[1] for i in interpolate_dataset(power_data, extend = 10, poly_order = 1)], requires_grad = True)
+    interpolated_power.retain_grad()
 
-    L = 1.
-    ang_pol = 0.0
-    step = 0.01
-    i_vals = np.arange(0.0, 1.0 + step, step)
-    grad_vals = []
-    P=[]
-    for val in tqdm(i_vals, desc="Scanning gradient"):
-        # print(val)
-        g = torch.tensor([val], dtype=torch.float32)
-        dflux, P1 = gradient_per_image(g, L, ang_pol, plot_fields=args.plot_fields)
-        grad_vals.append(dflux.item())
-        P.append(P1)
-    plt.plot(P)
-    plt.show()
-    correct_slopes = np.load('slope.npy')
-    plt.figure(figsize=(6, 4))
-    plt.plot(i_vals, grad_vals, label = 'Calculated slopes', lw=2)
-    plt.plot(i_vals, correct_slopes, label = 'Correct slopes', lw = 2)
-    plt.legend()
-    plt.xlabel('Grating amplitude')
-    plt.ylabel('dFOM / d(amplitude)')
-    plt.title('Gradient of FOM vs. Grating Amplitude')
-    plt.grid(True)
-    plt.show()
+    idx = wl_mask.nonzero(as_tuple = True)[0]
+    eff = ff.power_ratio(wavelengths[idx], interpolated_power[idx], ff.T_e, .726)
+    eff.backward()
 
-    print(np.max(np.abs(correct_slopes[1:-1] - grad_vals[1:-1])))
-    print(correct_slopes[10] , grad_vals[10])
-    print(correct_slopes[50] , grad_vals[50])
+    dflux_dwl = interpolated_power.grad * jump # type: ignore
+    # print(dflux.shape)
+    deff_dmeas = torch.sum(dflux_dwl[:, None] * dflux, dim = 0)
+    total_pts = deff_dmeas.numel()
+    if total_pts % len(grating) != 0:
+        raise ValueError(f"Inconsistent measured-point counts: {total_pts} points "
+                         f"cannot be evenly divided into {len(grating)} squares")
+    dflux_dgeo = deff_dmeas.view(len(grating), x_density).sum(dim=1)
+    return dflux_dgeo, power, eff.detach()
 
-if __name__ == '__main__':
-    main()
+for depth in [0.1, 0.2, 0.3, 0.5, 0.8, 0.9, 1.1]:
+    grating = torch.rand((config['n_grating_elements'],))
+    prev_eff = 0
+    for epoch in range(100):
+        gradient, power, eff = gradient_per_image(grating, 1, 0, depth)
+        if eff < prev_eff:
+            print("\n\nFAILED\n")
+            # break
+        prev_eff = eff
+        # print('-'*30)
+        # print(f'E: {epoch} >> P: {power.detach().numpy()}')
+        print(f'Ef: {eff.numpy()}')
+        # print(f'G: {gradient.detach().numpy()}')
+        # print(f'V: {grating}')
+        grating -= gradient
+        with torch.no_grad():
+            grating.data.clamp_(0.0, 1.0)
