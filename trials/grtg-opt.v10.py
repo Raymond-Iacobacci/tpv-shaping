@@ -35,17 +35,20 @@ class Generator(nn.Module):
 # --------------------------------------------------
 def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
                        plot_fields: bool = False):
-    p = 350
     n_grating_elements = grating.shape[-1]
     x_density = 10
     n_x_pts = x_density * n_grating_elements
     depth = 0.7
     vac_depth = 1.8
-    z_space = np.linspace(0, vac_depth + depth + 1, 40)
+    z_space = np.linspace(0, vac_depth + depth + 1, 50)
     # measurement volume for gradient: within grating layer
     z_meas = z_space[(z_space >= vac_depth) & (z_space <= vac_depth + depth)]
     wavelengths = torch.linspace(0.35, 3.0, 2651)
-    z_buf = 0.
+    sample_mask = torch.zeros_like(wavelengths, dtype = torch.bool)
+    z_buf = 0.9
+    jump = 10
+    indices_used = []
+    x_wls = [.5, 1]
 
     def make_grid(L, n_cells, k):
         dx = L / n_cells
@@ -56,22 +59,20 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
     x_space = make_grid(L, n_cells=x_density, k=n_grating_elements)
 
     dflux = torch.zeros((2, n_x_pts))
-    dflux1 = torch.zeros((2, n_x_pts))
     power = []
-    N = 3
-    for i_wl, wl in enumerate(wavelengths[p:p + 1]):
+
+    for i_wl, wl in enumerate(wavelengths):
         # forward solve
-        S = S4.New(Lattice=L, NumBasis=N)
-        S.SetMaterial(Name='W',   Epsilon=ff.w_n[i_wl + p + 130]**2)
-        # S.SetMaterial(Name='W',   Epsilon=(ff.w_n[i_wl+p+130]**2-1)*grating[0].item()+1)
-
+        if wl.item() in x_wls or i_wl % jump != 0:
+            continue
+        indices_used.append(i_wl)
+        sample_mask[i_wl] = True
+        S = S4.New(Lattice=L, NumBasis=20)
+        S.SetMaterial(Name='W',   Epsilon=ff.w_n[i_wl + 130]**2)
         S.SetMaterial(Name='Vac', Epsilon=1)
-        S.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl + p + 130]**2 - 1) * grating[0].item() + 1)
-        # S.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl+p+130]**2-1)+1)
-
+        S.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl + 130]**2 - 1) * grating[0].item() + 1)
         S.AddLayer(Name='VacuumAbove', Thickness=vac_depth, Material='Vac')
-        S.AddLayer(Name='Grating', Thickness=depth, Material='Vac')
-        S.SetRegionRectangle(Layer = 'Grating', Material = 'AlN', Center = (L/2., L/2), Halfwidths = (L/2., L/2), Angle = 0)
+        S.AddLayer(Name='Grating', Thickness=depth, Material='AlN')
         S.AddLayer(Name='Ab', Thickness=1.0, Material='W')
         S.SetFrequency(1.0 / wl)
         S.SetExcitationPlanewave((0, 0),
@@ -79,7 +80,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
                                  pAmplitude=np.sin(ang_pol * np.pi/180),
                                  Order=0)
         forw, back = S.GetPowerFlux('VacuumAbove', zOffset=0)
-        power.append(np.abs(back))
+        power.append(1 - np.abs(back))
 
         # sample full forward volume
         fwd_vol = np.zeros((z_space.size, n_x_pts), complex)
@@ -90,34 +91,24 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
         # adjoint solve
         S_adj = S.Clone()
         # build adjoint excitation at buffer
-        # adj_buf = np.array([S.GetFields(x, 0, 0.0)[0][1]-1 for x in x_space])
-        # step = np.conj(adj_buf)
-        # fourier_adj = ff.create_step_excitation(
-        #     basis=S_adj.GetBasisSet(), step_values=step,
-        #     num_harmonics=20, x_shift=0, initial_phase=0,
-        #     amplitude=1.0, period=L, plot_fourier=False
-        # )
+        adj_buf = np.array([S.GetFields(x, 0, 0.0)[0][1]-1 for x in x_space])
+        step = np.conj(adj_buf)
+        fourier_adj = ff.create_step_excitation(
+            basis=S_adj.GetBasisSet(), step_values=step,
+            num_harmonics=20, x_shift=0, initial_phase=0,
+            amplitude=1.0, period=L, plot_fourier=False
+        )
         (forw_amp, back_amp) = S.GetAmplitudes('VacuumAbove', zOffset=z_buf)
-        excitations = []
-        # print(back_amp)
-        # print(forw_amp)
-        for i, raw_amp in enumerate(back_amp[:int(len(back_amp)/2)]):
-        # print(S_adj.GetBasisSet())
-        # for i, raw_amp in enumerate(back_amp[0:3]):
-            k0 = 2 * np.pi / (wl.item())
-            corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
-            excitations.append((S_adj.GetBasisSet()[i+0][0], b'y', corr_amp*10))
-        # S_adj.SetExcitationExterior(Excitations=tuple(excitations)) # This is the problem -- it's not accurate with higher harmonics and disappears at the 0-harmonic
-        print(excitations)
-        # print(S_adj.GetBasisSet())
-        # sys.exit(1)
+        # S_adj.SetExcitationExterior(Excitations=tuple(fourier_adj))
         k0 = 2 * np.pi / (wl.item())
         phase_correction = np.exp(-1j * k0 * z_buf)   # one-way trip
         adj_amp = phase_correction * np.conj(back_amp[0])
-        # print(adj_amp)
-        # # print(back_amp[0])
-        S_adj.SetExcitationPlanewave((0,0), sAmplitude=np.cos(ang_pol*np.pi/180) * adj_amp,pAmplitude=np.sin(ang_pol*np.pi/180) * adj_amp,Order=0)
-        # sys.exit(1)
+        # print(back_amp[0])
+        S_adj.SetExcitationPlanewave((0,0),
+                                     sAmplitude=np.cos(ang_pol*np.pi/180) * adj_amp,
+                                     pAmplitude=np.sin(ang_pol*np.pi/180) * adj_amp,
+                                     Order=0)
+
         # sample full adjoint volume
         adj_vol = np.zeros((z_space.size, n_x_pts), complex)
         for iz, z in enumerate(z_space):
@@ -172,38 +163,19 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
 
         # print(2, np.pi, wl.item(), ff.e_0, ff.c)
         # print(phase_correction)
-        rot = np.e ** (1j/2*np.pi) # Use this from homogeneous tests
         term = k0 * torch.real(
             torch.einsum('ijkl,ijkl->ijk',
                          torch.as_tensor(vol_meas),
-                         torch.as_tensor(adj_meas)*rot) # This rotation factor is equivalent to taking the -imaginary value of the system
+                         torch.as_tensor(adj_meas)*1j)
         )
         dz = (depth) / len(z_meas)
         dflux[i_wl] = term.sum(dim=0).squeeze() * dz * L / n_x_pts
-        # dflux[i_wl] = dflux[i_wl].reshape(-1, x_density).sum(dim=1)
-        dflux[i_wl] = dflux[i_wl] * (ff.aln_n[i_wl + p + 130]**2 - 1) # HERE IT IS!
-
-        term1 = k0 * torch.imag(
-            torch.einsum('ijkl,ijkl->ijk',
-                         torch.as_tensor(vol_meas),
-                         torch.as_tensor(adj_meas))
-        )
-        dz = (depth) / len(z_meas)
-        # print(term1.shape)
-        dflux1[i_wl] = term1.sum(dim=0).squeeze() * dz * L / n_x_pts # We need some way to multiply the values in here by the amount that they're scaling by
-        # print(dflux1.shape)
-        # dflux1[i_wl] = dflux1[i_wl].reshape(-1, x_density).sum(dim=1)
-        # print(dflux1.shape)
-        dflux1[i_wl] = dflux1[i_wl] * (ff.aln_n[i_wl + p + 130]**2 - 1)
-        # plt.plot(dflux1[i_wl].detach())
-        # plt.show()
-
+        dflux[i_wl] = dflux[i_wl].reshape(-1, x_density).sum(dim=1)
+        dflux[i_wl] = dflux[i_wl] * (ff.aln_n[i_wl + 130]**2 - 1)
 
     dfom = dflux[0]
     diff = float(power[0])
-    # print(dflux1[0][2:8].shape)
-    # sys.exit(1)
-    return (dfom, torch.mean(dflux1[0][:])), diff
+    return dfom, diff
 
 # --------------------------------------------------
 # Main: scan & plot
@@ -214,21 +186,17 @@ def main():
                         help='Plot full-field forward and adjoint E-fields')
     args = parser.parse_args()
 
-    L = 1.
+    L = 1.1
     ang_pol = 0.0
     step = 0.01
     i_vals = np.arange(0.0, 1.0 + step, step)
     grad_vals = []
-    grad_vals1 = []
-    P=[]
+
     for val in tqdm(i_vals, desc="Scanning gradient"):
         g = torch.tensor([val], dtype=torch.float32)
-        (dfom, dfom1), P1 = gradient_per_image(g, L, ang_pol, plot_fields=args.plot_fields)
+        dfom, _ = gradient_per_image(g, L, ang_pol, plot_fields=args.plot_fields)
         grad_vals.append(dfom[0].item())
-        grad_vals1.append(dfom1.item())
-        P.append(P1)
-    plt.plot(P)
-    plt.show()
+
     correct_slopes = np.load('slope.npy')
     plt.figure(figsize=(6, 4))
     plt.plot(i_vals, grad_vals, lw=2)
@@ -237,46 +205,6 @@ def main():
     plt.title('Gradient of FOM vs. Grating Amplitude')
     plt.grid(True)
     plt.show()
-
-    correct_slopes = np.load('slope.npy')
-    plt.figure(figsize=(6, 4))
-    plt.plot(i_vals, grad_vals1, lw=2)
-    plt.xlabel('Imaginary Grating amplitude')
-    plt.ylabel('dFOM / d(amplitude)')
-    plt.title('Gradient of FOM vs. Grating Amplitude')
-    plt.grid(True)
-    plt.show()
-
-    thetas = np.linspace(0, 2 * np.pi, 360, endpoint=False)
-    scalings = np.linspace(0.3, 1.5, 101)
-    best_mse = float('inf')
-    best_theta = 0.0
-    best_scale = 1.0
-    best_weighted = None
-
-    for theta in thetas:
-        unit_w = np.cos(theta) + 1j * np.sin(theta)
-        w = unit_w
-        slopes_variant = w.real * np.array(grad_vals) + w.imag * np.array(grad_vals1)
-        mse = np.mean(np.abs(slopes_variant - correct_slopes)**2)
-        if mse < best_mse:
-            best_mse = mse
-            best_theta = theta
-            best_weighted = slopes_variant
-
-    print(f'Optimal scale: {best_scale:.3f}, theta: {best_theta:.3f} rad')
-    print(f'Optimal complex weight: (cos+isin) -> {best_weighted[0].real + 1j*best_weighted[0].imag}, MSE: {best_mse}')
-    # Plot best weighted vs correct
-    plt.figure(figsize=(6, 4))
-    plt.plot(i_vals, correct_slopes, label='Correct slopes', lw=2)
-    plt.plot(i_vals, grad_vals, label=f'Weighted theta={best_theta:.3f})', lw=2)
-    plt.xlabel('Grating amplitude')
-    plt.ylabel('Slope')
-    plt.title('Best weighted slopes vs. correct slopes')
-    plt.legend()
-    plt.grid(True)
-    plt.show()
-
     print(np.max(np.abs(correct_slopes[1:-1] - grad_vals[1:-1])))
     print(correct_slopes[10] , grad_vals[10])
     print(correct_slopes[50] , grad_vals[50])

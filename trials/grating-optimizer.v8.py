@@ -9,6 +9,7 @@ import S4
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+import sys
 
 # --------------------------------------------------
 # Neural network generator: maps latent vector to grating pattern
@@ -83,7 +84,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float):
         vol = np.zeros((z_meas.size,1,n_x_pts,3), complex)
         for iz, z in enumerate(z_meas):
             for ix, x in enumerate(x_meas): vol[iz,0,ix] = S.GetFields(x,0,z)[0]
-        del S
+        # del S
 
         mag   = np.abs(adj_flds[0,0,:]**2)
         phase = np.angle(adj_flds[0,0,:])
@@ -93,6 +94,10 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float):
             num_harmonics=30, x_shift=0, initial_phase=0,
             amplitude=1.0, period=L, plot_fourier=False
         )
+        (forw_amp, back_amp) = S.GetAmplitudes('VacuumAbove', zOffset=0)
+        print(back_amp)
+        print(fourier_adj)
+        sys.exit(1)
         S_adj.SetExcitationExterior(Excitations=tuple(fourier_adj))
 
         adj_vol = np.zeros((z_meas.size,1,n_x_pts,3), complex)

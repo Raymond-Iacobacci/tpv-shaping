@@ -34,7 +34,7 @@ class Generator(nn.Module):
 # --------------------------------------------------
 def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, i):
     p = 1480
-    p = 350
+    p = 20
     n_grating_elements = grating.shape[-1]
     x_density = 5
     n_x_pts = x_density * n_grating_elements
@@ -54,23 +54,31 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, i):
     dflux = torch.zeros((2, n_x_pts))
     power = []
 
-    for i_wl, wl in enumerate(wavelengths[p:p+2]):
-        S = S4.New(Lattice=L, NumBasis=20)
-        S.SetMaterial(Name='W',   Epsilon=ff.w_n[i_wl+p+130]**2)
+    for i_wl, wl in enumerate(wavelengths[p:p+1]):
+        S = S4.New(Lattice=L, NumBasis=5)
+        S.SetMaterial(Name='W',   Epsilon=(ff.w_n[i_wl+p+130]**2-1)+1)
         S.SetMaterial(Name='Vac', Epsilon=1)
         S.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl+p+130]**2-1)*i+1)
+        # S.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl+p+130]**2-1)+1)
+
 
         S.AddLayer(Name='VacuumAbove', Thickness=0.5, Material='Vac')
-        S.AddLayer(Name='Grating',      Thickness=depth, Material='AlN')
-        S.AddLayer(Name='VacuumBelow', Thickness=1, Material='Vac')
+        S.AddLayer(Name='Grating',      Thickness=depth, Material='Vac')
+        S.SetRegionRectangle(Layer = 'Grating', Material = 'AlN', Center = (L/2, L/2), Halfwidths = (L/4, L/2), Angle = 0)
+        S.AddLayer(Name='VacuumBelow', Thickness=1, Material='W')
         # S.AddLayer(Name='Ab', Thickness=1.0, Material='W')
         S.SetFrequency(1.0 / wl)
 
         S_adj = S.Clone()
         S.SetExcitationPlanewave((0,0), sAmplitude=np.cos(ang_pol*np.pi/180), pAmplitude=np.sin(ang_pol*np.pi/180), Order=0)
+        # excitations = []
+        # excitations.append((2, b'y', 1))
+        # S.SetExcitationExterior(tuple(excitations))
         (_, back) = S.GetPowerFlux('VacuumAbove', zOffset=0)
         power.append(np.abs(back))
-    print(power[0],power[1],sep=" ")
+
+        
+    # print(power[0])
     return power[0]
 
 # --------------------------------------------------
