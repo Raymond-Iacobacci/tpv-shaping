@@ -35,15 +35,14 @@ class Generator(nn.Module):
 # --------------------------------------------------
 # Physics-based gradient + full-field sampling
 # --------------------------------------------------
-N = 5
-h5 = []
+N = 13
 def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
                        plot_fields: bool = False):
     p = 20
     n_grating_elements = grating.shape[-1]
     x_density = 30
     n_x_pts = x_density * n_grating_elements
-    depth = 0.7
+    depth = 0.9
     vac_depth = 0.00
     z_meas = np.linspace(vac_depth, vac_depth + depth, 70)
     # measurement volume for gradient: within grating layer
@@ -85,107 +84,36 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
             for ix, x in enumerate(x_space):
                 fwd_meas[iz, 0, ix] = S.GetFields(x, 0, z)[0]
 
-        S_adj_zero = S.Clone()
         (forw_amp, back_amp) = S.GetAmplitudes('VacuumAbove', zOffset=z_buf)
 
-        zero_excitations = []
-        basis = S_adj_zero.GetBasisSet() # Removes the repeated calls
-        pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] == 0]
         k0 = 2 * np.pi / wl.item()
-        for i, raw_amp in enumerate(back_amp):
-            if i not in pos_harmonics:
-                continue
-            corr_amp = complex(np.exp(1j * k0 * ( - z_buf)) * np.conj(raw_amp))
-            zero_excitations.append((basis[i][0]+1, b'y', corr_amp))
-        S_adj_zero.SetExcitationExterior(tuple(zero_excitations))
-
-        S_adj_pos = S.Clone()
-        zero_adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
-        for iz, z in enumerate(z_meas):
-            for ix, x in enumerate(x_space):
-                zero_adj_meas[iz, 0, ix] = S_adj_zero.GetFields(x, 0, z)[0]
-
-        pos_excitations = []
-        basis = S_adj_pos.GetBasisSet() # Removes the repeated calls
+        S_adj = S.Clone()
+        basis = S_adj.GetBasisSet() # Removes the repeated calls
         
-        # pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] > 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
-        pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] == 1]
+        pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] > 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
+        neg_harmonics = [ i for i in range(len(basis)) if basis[i][0] <= 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
         k0 = 2 * np.pi / wl.item()
-        pos_mag = 0
+        excitations = []
         for i, raw_amp in enumerate(back_amp):
-            if i not in pos_harmonics:
+            if i not in pos_harmonics and i not in neg_harmonics:
                 continue
             corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
-            # if i == 3:
-            #     print(raw_amp)
-            pos_excitations.append((basis[i][0]+1, b'y', corr_amp))
-            pos_mag += np.abs(corr_amp) ** 2
-        S_adj_pos.SetExcitationExterior(tuple(pos_excitations))
+            if i in pos_harmonics:
+                excitations.append((2*basis[i][0], b'y', corr_amp))
+            if i in neg_harmonics:
+                excitations.append((-2*basis[i][0]+1, b'y', corr_amp))
+        S_adj.SetExcitationExterior(tuple(excitations))
 
         pos_adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
         for iz, z in enumerate(z_meas):
             for ix, x in enumerate(x_space):
-                pos_adj_meas[iz, 0, ix] = S_adj_pos.GetFields(x, 0, z)[0]
+                pos_adj_meas[iz, 0, ix] = S_adj.GetFields(x, 0, z)[0]
 
-        S_adj_sec = S.Clone()
-        sec_excitations = []
-        sec_mag = 0
-        sec_harmonics = [ i for i in range(len(basis)) if basis[i][0] == 2]
-        k0 = 2 * np.pi / wl.item()
-        pos_mag = 0
-        for i, raw_amp in enumerate(back_amp):
-            if i not in sec_harmonics:
-                continue
-            corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
-            # if i == 3:
-            #     print(raw_amp)
-            sec_excitations.append((basis[i][0]+2, b'y', corr_amp))
-            sec_mag += np.abs(corr_amp) ** 2
-        S_adj_sec.SetExcitationExterior(tuple(sec_excitations))
-        h5.append(sec_mag)
-        sec_adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
-        for iz, z in enumerate(z_meas):
-            for ix, x in enumerate(x_space):
-                sec_adj_meas[iz, 0, ix] = S_adj_sec.GetFields(x, 0, z)[0]
-
-        S_adj_neg = S4.New(Lattice = L, NumBasis = N)
-        S_adj_neg.SetMaterial(Name='W',   Epsilon=ff.w_n[i_wl + p + 130]**2)
-        S_adj_neg.SetMaterial(Name='Vac', Epsilon=1)
-        S_adj_neg.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl + p+130]**2 - 1) * grating[0].item() + 1)
-        S_adj_neg.AddLayer(Name='VacuumAbove', Thickness=vac_depth, Material='Vac')
-        S_adj_neg.AddLayer(Name='Grating', Thickness=depth, Material='Vac')
-        S_adj_neg.SetRegionRectangle(Layer = 'Grating', Material = 'AlN', Center = (L-L/2, L/2), Halfwidths = (L/4, L/2), Angle = 0)
-        S_adj_neg.AddLayer(Name='Ab', Thickness=1.0, Material='W')
-        S_adj_neg.SetFrequency(1.0 / wl)
-        neg_excitations = []
-        neg_harmonics = [ i for i in range(len(basis)) if basis[i][0] < 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
-        # print(neg_harmonics, basis)
-        # neg_harmonics = [ i for i in range(len(basis)) if basis[i][0] == -1]
-        neg_mag = 0
-        for i, raw_amp in enumerate(back_amp):
-            if i not in neg_harmonics:
-                continue
-            corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
-            # if i == 3:
-            #     print(raw_amp)
-            neg_excitations.append((-basis[i][0]+1, b'y', corr_amp))
-            neg_mag += np.abs(corr_amp) ** 2
-        if neg_excitations:
-            S_adj_neg.SetExcitationExterior(tuple(neg_excitations))
-
-        neg_adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
-        for iz, z in enumerate(z_meas):
-            for ix, x in enumerate(x_space):
-                # neg_adj_meas[iz, 0, ix] = S_adj_neg.GetFields(x, 0, z)[0]
-                neg_adj_meas[iz, 0, ix] = pos_adj_meas[iz, 0, -1-ix]
-        rot = np.e ** (1j/2*np.pi) # Use this from homogeneous tests
-        term = k0 * torch.real(
+        term = -k0 * torch.imag(
             torch.einsum('ijkl,ijkl->ijk',
                          torch.as_tensor(fwd_meas),
-                         torch.as_tensor(zero_adj_meas + 2. * pos_adj_meas + 0. * neg_adj_meas + sec_adj_meas*2)*rot) # This rotation factor is equivalent to taking the -imaginary value of the system
+                         torch.as_tensor(pos_adj_meas)) # This rotation factor is equivalent to taking the -imaginary value of the system
         )
-        if grating.mean() == 0.7:
-            print(np.sum(pos_adj_meas - neg_adj_meas))
         dz = (depth) / len(z_meas)
         dflux[i_wl] = term.sum(dim=0).squeeze() * dz * L / n_x_pts
         dflux[i_wl] = dflux[i_wl] * (ff.aln_n[i_wl + p+130]**2 - 1) # HERE IT IS!
@@ -197,7 +125,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
             for iz, z in enumerate(z_space):
                 for ix, x in enumerate(x_space):
                     fwd_vol[iz, ix] = S.GetFields(x, 0, z)[0][1]
-                    adj_vol[iz, ix] = S_adj_pos.GetFields(x, 0, z)[0][1] + S_adj_pos.GetFields(-x, 0, z)[0][1]
+                    adj_vol[iz, ix] = S_adj.GetFields(x, 0, z)[0][1] + S_adj.GetFields(-x, 0, z)[0][1]
 
 
             # compute product of forward and adjoint fields
@@ -233,10 +161,10 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
             plt.tight_layout()
             plt.show()
 
-        del S, S_adj_neg, S_adj_pos
+        del S, S_adj
     # print(dflux/(ff.aln_n[0 + p + 130]**2 - 1) )
     # print(f'Dflux shape: {dflux.shape}')
-    return (torch.sum(dflux[0][8:21])), power[0] # 8, 21
+    return (torch.sum(dflux[0][7:22])), power[0] # 8, 21
 
 # --------------------------------------------------
 # Main: scan & plot
@@ -272,9 +200,6 @@ def main():
     plt.grid(True)
     plt.show()
     np.save(f'computed_slope{N}.npy', grad_vals)
-    plt.plot(h5)
-    plt.title('5th amplitude magnitude')
-    plt.show()
 
     print(np.max(np.abs(correct_slopes[1:-1] - grad_vals[1:-1])))
     print(correct_slopes[10] , grad_vals[10])

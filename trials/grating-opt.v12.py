@@ -193,89 +193,40 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,depth: fl
                                  Order=0)
         forw, back = S.GetPowerFlux('VacuumAbove', zOffset=0)
         power.append(1-np.abs(back))
+        (forw_amp, back_amp) = S.GetAmplitudes('VacuumAbove', zOffset=z_buf)
 
         fwd_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
         for iz, z in enumerate(z_meas):
             for ix, x in enumerate(x_space):
                 fwd_meas[iz, 0, ix] = S.GetFields(x, 0, z)[0]
 
-        S_adj_zero = S.Clone()
-        (forw_amp, back_amp) = S.GetAmplitudes('VacuumAbove', zOffset=z_buf)
-
-        zero_excitations = []
-        basis = S_adj_zero.GetBasisSet() # Removes the repeated calls
-        pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] == 0]
         k0 = 2 * np.pi / wl.item()
-        for i, raw_amp in enumerate(back_amp):
-            if i not in pos_harmonics:
-                continue
-            corr_amp = complex(np.exp(1j * k0 * ( - z_buf)) * np.conj(raw_amp))
-            zero_excitations.append((basis[i][0]+1, b'y', corr_amp))
-        S_adj_zero.SetExcitationExterior(tuple(zero_excitations))
 
-        S_adj_pos = S.Clone()
-        zero_adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
-        for iz, z in enumerate(z_meas):
-            for ix, x in enumerate(x_space):
-                zero_adj_meas[iz, 0, ix] = S_adj_zero.GetFields(x, 0, z)[0]
+        S_adj = S.Clone()
 
-        pos_excitations = []
-        basis = S_adj_pos.GetBasisSet() # Removes the repeated calls
+        basis = S_adj.GetBasisSet() # Removes the repeated calls
         
         pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] > 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
-        pos_adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
-        # pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] == 1]
-        if pos_harmonics:
-            k0 = 2 * np.pi / wl.item()
-            pos_mag = 0
-            for i, raw_amp in enumerate(back_amp):
-                if i not in pos_harmonics:
-                    continue
-                corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
-                pos_excitations.append((basis[i][0]+1, b'y', corr_amp))
-                pos_mag += np.abs(corr_amp) ** 2
-                S_adj_pos.SetExcitationExterior(tuple(pos_excitations))
-
-                for iz, z in enumerate(z_meas):
-                    for ix, x in enumerate(x_space):
-                        pos_adj_meas[iz, 0, ix] = S_adj_pos.GetFields(x, 0, z)[0]
-
-        neg_excitations = []
-        neg_harmonics = [ i for i in range(len(basis)) if basis[i][0] < 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
-        neg_adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
-        if neg_harmonics:
-            S_adj_neg = S4.New(Lattice = L, NumBasis = N)
-            S_adj_neg.SetMaterial(Name='W',   Epsilon=ff.w_n[i_wl + 130]**2)
-            S_adj_neg.SetMaterial(Name='Vac', Epsilon=1)
-            S_adj_neg.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl + 130]**2 - 1) * grating[0].item() + 1)
-            S_adj_neg.AddLayer(Name='VacuumAbove', Thickness=vac_depth, Material='Vac')
-            S_adj_neg.AddLayer(Name='Grating', Thickness=depth, Material='Vac')
-            for ns in range(len(grating)):
-                S_adj_neg.SetMaterial(Name = f'SquareMat-{ns+1}', Epsilon = grating[ns].item() * (ff.aln_n[i_wl+130]**2-1)+1)
-                S_adj_neg.SetRegionRectangle(Layer = 'Grating', Material = f'SquareMat-{ns+1}', Center = (L - ((ns+1) / len(grating) - 1 / (2 * len(grating))) * L, .5), Halfwidths = ((1 / (2 * len(grating))*L), .5), Angle = 0) # Flip about x=L/2
-            S_adj_neg.AddLayer(Name='Ab', Thickness=1.0, Material='W')
-            S_adj_neg.SetFrequency(1.0 / wl)
-
-            # neg_harmonics = [ i for i in range(len(basis)) if basis[i][0] == -1]
-            neg_mag = 0
-            for i, raw_amp in enumerate(back_amp):
-                if i not in neg_harmonics:
-                    continue
-                corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
-                neg_excitations.append((-basis[i][0]+1, b'y', corr_amp))
-                neg_mag += np.abs(corr_amp) ** 2
-                S_adj_neg.SetExcitationExterior(tuple(neg_excitations))
-
-            for iz, z in enumerate(z_meas):
-                for ix, x in enumerate(x_space):
-                    neg_adj_meas[iz, 0, ix] = S_adj_neg.GetFields(x, 0, z)[0]
-                    # neg_adj_meas[iz, 0, ix] = pos_adj_meas[iz, 0, -1-ix]
-            del S_adj_neg
-        rot = np.e ** (1j/2*np.pi) # Use this from homogeneous tests
-        term = k0 * torch.real(
+        neg_harmonics = [ i for i in range(len(basis)) if basis[i][0] <= 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
+        k0 = 2 * np.pi / wl.item()
+        excitations = []
+        for i, raw_amp in enumerate(back_amp):
+            if i not in pos_harmonics and i not in neg_harmonics:
+                continue
+            corr_amp = complex(np.exp(-1j * k0 * z_buf) * np.conj(raw_amp))
+            if i in pos_harmonics:
+                excitations.append((2*basis[i][0], b'y', corr_amp))
+            if i in neg_harmonics:
+                excitations.append((-2*basis[i][0]+1, b'y', corr_amp))
+        S_adj.SetExcitationExterior(tuple(excitations))
+        adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
+        for iz, z in enumerate(z_meas):
+            for ix, x in enumerate(x_space):
+                adj_meas[iz, 0, ix] = S_adj.GetFields(x, 0, z)[0]
+        term = -k0 * torch.imag(
             torch.einsum('ijkl,ijkl->ijk',
                          torch.as_tensor(fwd_meas),
-                         torch.as_tensor(zero_adj_meas + pos_adj_meas + neg_adj_meas)*rot) # This rotation factor is equivalent to taking the -imaginary value of the system
+                         torch.as_tensor(adj_meas)) # This rotation factor is equivalent to taking the -imaginary value of the system
         )
         dz = (depth) / len(z_meas)
         dflux[i_wl] = term.mean(dim=0).squeeze() * dz * L / n_x_pts
@@ -288,7 +239,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,depth: fl
             for iz, z in enumerate(z_space):
                 for ix, x in enumerate(x_space):
                     fwd_vol[iz, ix] = S.GetFields(x, 0, z)[0][1]
-                    adj_vol[iz, ix] = S_adj_pos.GetFields(x, 0, z)[0][1] + S_adj_pos.GetFields(-x, 0, z)[0][1]
+                    adj_vol[iz, ix] = S_adj.GetFields(x, 0, z)[0][1] + S_adj.GetFields(-x, 0, z)[0][1]
 
 
             # compute product of forward and adjoint fields
@@ -324,7 +275,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,depth: fl
             plt.tight_layout()
             plt.show()
 
-        del S, S_adj_pos
+        del S, S_adj
     n_wl, total_pts = dflux.shape
 
     dflux = torch.tensor(dflux, requires_grad = True)

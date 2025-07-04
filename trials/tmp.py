@@ -32,13 +32,14 @@ class Generator(nn.Module):
 # --------------------------------------------------
 # Physics-based gradient: computes dfom_deps and FOM diff
 # --------------------------------------------------
+n=13
 def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, i):
     p = 1480
     p = 20
     n_grating_elements = grating.shape[-1]
     x_density = 5
     n_x_pts = x_density * n_grating_elements
-    depth = 0.7
+    depth = 0.9
     z_buff = 0.15
     z_space = np.linspace(0, 0.5 + depth + 1, 10)
     z_meas = z_space[(z_space >= 0.5) & (z_space <= 0.5 + depth)]
@@ -55,11 +56,11 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, i):
     power = []
 
     for i_wl, wl in enumerate(wavelengths[p:p+1]):
-        S = S4.New(Lattice=L, NumBasis=13)
+        S = S4.New(Lattice=L, NumBasis=n)
         S.SetMaterial(Name='W',   Epsilon=(ff.w_n[i_wl+p+130]**2-1)+1)
         S.SetMaterial(Name='Vac', Epsilon=1)
+        # S.SetMaterial(Name='AlN', Epsilon=(ff.cao_n[i_wl+p]**2-1)*i+1)
         S.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl+p+130]**2-1)*i+1)
-        # S.SetMaterial(Name='AlN', Epsilon=(ff.aln_n[i_wl+p+130]**2-1)+1)
 
 
         S.AddLayer(Name='VacuumAbove', Thickness=0.5, Material='Vac')
@@ -126,7 +127,7 @@ def main():
     plt.xlabel("step index")
     plt.ylabel("slope")
     plt.legend()
-    np.save('slope.npy', slopes)
+    np.save(f'slope{n}.npy', slopes)
 
     plt.tight_layout()
     plt.show()
