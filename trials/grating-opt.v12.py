@@ -181,7 +181,6 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,depth: fl
 
         S.AddLayer(Name='VacuumAbove', Thickness=vac_depth, Material='Vac')
         S.AddLayer(Name='Grating', Thickness=depth, Material='Vac')
-        S.SetRegionRectangle(Layer = 'Grating', Material = 'AlN', Center = (L/2, L/2), Halfwidths = (L/4, L/2), Angle = 0)
         for ns in range(len(grating)):
             S.SetMaterial(Name = f'SquareMat-{ns+1}', Epsilon = grating[ns].item() * (ff.aln_n[i_wl+130]**2-1)+1)
             S.SetRegionRectangle(Layer = 'Grating', Material = f'SquareMat-{ns+1}', Center = (((ns+1) / len(grating) - 1 / (2 * len(grating))) * L, .5), Halfwidths = ((1 / (2 * len(grating))*L), .5), Angle = 0)
@@ -229,7 +228,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,depth: fl
                          torch.as_tensor(adj_meas)) # This rotation factor is equivalent to taking the -imaginary value of the system
         )
         dz = (depth) / len(z_meas)
-        dflux[i_wl] = term.mean(dim=0).squeeze() * dz * L / n_x_pts
+        dflux[i_wl] = term.sum(dim=0).squeeze() * dz * L / n_x_pts
         dflux[i_wl] = dflux[i_wl] * (ff.aln_n[i_wl+130]**2 - 1) # HERE IT IS!
 
         if plot_fields:
@@ -277,7 +276,6 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,depth: fl
 
         del S, S_adj
     n_wl, total_pts = dflux.shape
-
     dflux = torch.tensor(dflux, requires_grad = True)
     power = torch.tensor(power, requires_grad = True)
     power_data = [(indices_used[i], power[i]) for i in range(len(indices_used))]
@@ -298,7 +296,8 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,depth: fl
     dflux_dgeo = deff_dmeas.view(len(grating), x_density).sum(dim=1)
     return dflux_dgeo, power, eff.detach()
 
-for depth in [0.1, 0.2, 0.3, 0.5, 0.8, 0.9, 1.1]:
+# for depth in [0.1, 0.2, 0.3, 0.5, 0.8, 0.9, 1.1]:
+for depth in [.473]:
     grating = torch.rand((config['n_grating_elements'],))
     prev_eff = 0
     for epoch in range(150):
@@ -311,8 +310,8 @@ for depth in [0.1, 0.2, 0.3, 0.5, 0.8, 0.9, 1.1]:
         # print(f'E: {epoch} >> P: {power.detach().numpy()}')
         print(f'Ef: {eff.numpy()}')
         # print(f'G: {gradient.detach().numpy()}')
-        # print(f'V: {grating}')
-        grating -= gradient
+        print(f'V: {grating}')
+        grating -= gradient*.1
         with torch.no_grad():
             grating.data.clamp_(0.0, 1.0)
     import time
