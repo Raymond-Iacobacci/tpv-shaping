@@ -35,15 +35,16 @@ class Generator(nn.Module):
 # --------------------------------------------------
 # Physics-based gradient + full-field sampling
 # --------------------------------------------------
-N = 15
+N = 9
 def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
                        plot_fields: bool = False):
     p = 20
     n_grating_elements = grating.shape[-1]
     x_density = 30
     n_x_pts = x_density * n_grating_elements
+    n_y_pts = n_x_pts
     depth = 0.9
-    vac_depth = 1.00
+    vac_depth = 0.00
     z_meas = np.linspace(vac_depth, vac_depth + depth, 70)
     # measurement volume for gradient: within grating layer
     # z_meas = z_space[(z_space >= vac_depth) & (z_space <= vac_depth + depth)]
@@ -57,11 +58,13 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
         return ((st + fr) * dx).ravel()
 
     x_space = make_grid(L, n_cells=x_density, k=n_grating_elements)
+    y_space = x_space.copy()
 
-    dflux = torch.zeros((2, n_x_pts))
+    dflux = torch.zeros((2, n_y_pts, n_x_pts))
     power = []
     for i_wl, wl in enumerate(wavelengths[p:p + 1]):
-        S = S4.New(Lattice=L, NumBasis=N)
+        # S = S4.New(Lattice=L, NumBasis=N)
+        S = S4.New(Lattice=((L, 0), (0, L)), NumBasis=N)
         S.SetMaterial(Name='W',   Epsilon=ff.w_n[i_wl + p + 130]**2)
 
         S.SetMaterial(Name='Vac', Epsilon=1)
@@ -69,7 +72,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
 
         S.AddLayer(Name='VacuumAbove', Thickness=vac_depth, Material='Vac')
         S.AddLayer(Name='Grating', Thickness=depth, Material='Vac')
-        S.SetRegionRectangle(Layer = 'Grating', Material = 'AlN', Center = (L/2, L/2), Halfwidths = (L/4, L/2), Angle = 0)
+        S.SetRegionRectangle(Layer = 'Grating', Material = 'AlN', Center = (L/2, L/2), Halfwidths = (L/4, L/4), Angle = 0)
         S.AddLayer(Name='Ab', Thickness=1.0, Material='W')
         S.SetFrequency(1.0 / wl)
         S.SetExcitationPlanewave((0, 0),
@@ -79,16 +82,24 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
         forw, back = S.GetPowerFlux('VacuumAbove', zOffset=0)
         power.append(np.abs(back))
 
-        fwd_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
+        fwd_meas = np.zeros((z_meas.size, n_y_pts, n_x_pts, 3), complex)
         for iz, z in enumerate(z_meas):
-            for ix, x in enumerate(x_space):
-                fwd_meas[iz, 0, ix] = S.GetFields(x, 0, z)[0]
+            for iy, y in enumerate(y_space):
+                for ix, x in enumerate(x_space):
+                    fwd_meas[iz, iy, ix] = S.GetFields(x, y, z)[0] # [0] gets the electric field
 
         (forw_amp, back_amp) = S.GetAmplitudes('VacuumAbove', zOffset=z_buf)
+        print(f"Back amplitudes with polarization {ang_pol}:")
+        for i in back_amp:
+            print(i)
+        print("Max amp:")
+        print(np.max(np.abs(back_amp)))
 
         k0 = 2 * np.pi / wl.item()
         S_adj = S.Clone()
         basis = S_adj.GetBasisSet() # Removes the repeated calls
+        print("Basis")
+        print(basis)
         
         pos_harmonics = [ i for i in range(len(basis)) if basis[i][0] > 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
         neg_harmonics = [ i for i in range(len(basis)) if basis[i][0] <= 0 and abs(2*np.pi*basis[i][0]/L) <= k0]
@@ -104,10 +115,11 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
                 excitations.append((-2*basis[i][0]+1, b'y', corr_amp))
         S_adj.SetExcitationExterior(tuple(excitations))
 
-        pos_adj_meas = np.zeros((z_meas.size, 1, n_x_pts, 3), complex)
+        pos_adj_meas = np.zeros((z_meas.size, n_y_pts, n_x_pts, 3), complex)
         for iz, z in enumerate(z_meas):
-            for ix, x in enumerate(x_space):
-                pos_adj_meas[iz, 0, ix] = S_adj.GetFields(x, 0, z)[0]
+            for iy, y in enumerate(y_space):
+                for ix, x in enumerate(x_space):
+                    pos_adj_meas[iz, iy, ix] = S_adj.GetFields(x, y, z)[0]
 
         term = -k0 * torch.imag(
             torch.einsum('ijkl,ijkl->ijk',
@@ -115,7 +127,9 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
                          torch.as_tensor(pos_adj_meas)) # This rotation factor is equivalent to taking the -imaginary value of the system
         )
         dz = (depth) / len(z_meas)
-        dflux[i_wl] = term.sum(dim=0).squeeze() * dz * L / n_x_pts
+        print(fwd_meas.shape)
+        print(term.shape)
+        dflux[i_wl] = term.sum(dim=0).squeeze() * dz * L / n_x_pts * L / n_y_pts # Takes away the height dimension and corrects for the xy-spacing
         dflux[i_wl] = dflux[i_wl] * (ff.aln_n[i_wl + p+130]**2 - 1) # HERE IT IS!
 
         if plot_fields:
@@ -164,6 +178,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,
         del S, S_adj
     # print(dflux/(ff.aln_n[0 + p + 130]**2 - 1) )
     # print(f'Dflux shape: {dflux.shape}')
+    sys.exit(1)
     return (torch.sum(dflux[0][7:22])), power[0] # 8, 21
 
 # --------------------------------------------------
@@ -176,7 +191,7 @@ def main():
     args = parser.parse_args()
 
     L = 1.
-    ang_pol = 0.0
+    ang_pol = 90
     step = 0.01
     i_vals = np.arange(0.0, 1.0 + step, step)
     grad_vals = []
@@ -185,18 +200,21 @@ def main():
         # print(val)
         g = torch.tensor([val], dtype=torch.float32)
         dflux, P1 = gradient_per_image(g, L, ang_pol, plot_fields=args.plot_fields)
+        # dflux2, P12 = gradient_per_image(g, L, 90, plot_fields = args.plot_fields)
+        # dflux += dflux2
+        # P1 += P12
         grad_vals.append(dflux.item())
         P.append(P1)
     plt.plot(P)
     plt.show()
     correct_slopes = np.load(f'slope{N}.npy')
-    plt.figure(figsize=(10, 5))
+    plt.figure(figsize=(6, 4))
     plt.plot(i_vals, grad_vals, label = 'Calculated slopes', lw=2)
     plt.plot(i_vals, correct_slopes, label = 'Correct slopes', lw = 2)
-    plt.legend(fontsize=15)
-    plt.xlabel('Grating amplitude',fontsize=15)
-    plt.ylabel('Gradient',fontsize=15)
-    plt.title(r'$\frac{\partial\text{eff}}{\partial\text{comp ratio}}$ vs comp ratio @ $n_\text{harm}=$'+f'{int((N+1)/2)}',fontsize=20)
+    plt.legend()
+    plt.xlabel('Grating amplitude')
+    plt.ylabel('dFOM / d(amplitude)')
+    plt.title('Gradient of FOM vs. Grating Amplitude')
     plt.grid(True)
     plt.show()
     np.save(f'computed_slope{N}.npy', grad_vals)

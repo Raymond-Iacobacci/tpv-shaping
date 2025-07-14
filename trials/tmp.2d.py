@@ -32,7 +32,7 @@ class Generator(nn.Module):
 # --------------------------------------------------
 # Physics-based gradient: computes dfom_deps and FOM diff
 # --------------------------------------------------
-n=15
+n=9
 def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, i):
     p = 1480
     p = 20
@@ -56,7 +56,8 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float, i):
     power = []
 
     for i_wl, wl in enumerate(wavelengths[p:p+1]):
-        S = S4.New(Lattice=L, NumBasis=n)
+        # S = S4.New(Lattice=L, NumBasis=n)
+        S = S4.New(Lattice=((L, 0), (0, L)), NumBasis=n)
         S.SetMaterial(Name='W',   Epsilon=(ff.w_n[i_wl+p+130]**2-1)+1)
         S.SetMaterial(Name='Vac', Epsilon=1)
         # S.SetMaterial(Name='AlN', Epsilon=(ff.cao_n[i_wl+p]**2-1)*i+1)

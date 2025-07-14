@@ -165,7 +165,7 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,depth: fl
 
     dflux = torch.zeros((len(wavelengths), n_x_pts))
     power = []
-    N = 13
+    N = 19
     indices_used = []
     wl_mask = torch.zeros_like(wavelengths, dtype=torch.bool)
     for i_wl, wl in enumerate(tqdm(wavelengths, desc="Wavelengths", leave = False)):
@@ -298,21 +298,47 @@ def gradient_per_image(grating: torch.Tensor, L: float, ang_pol: float,depth: fl
 
 # for depth in [0.1, 0.2, 0.3, 0.5, 0.8, 0.9, 1.1]:
 for depth in [.473]:
-    grating = torch.rand((config['n_grating_elements'],))
+    import matplotlib.ticker as ticker
+    plt.ion()  # turn on interactive mode
+    fig, ax = plt.subplots()
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Efficiency")
+    ax.set_title("Efficiency over Time")
+    # ax.yaxis.set_major_formatter(ticker.FormatStrFormatter('%.4f'))
+    # ax.yaxis.get_major_formatter().set_useOffset(False)
+    # or, more succinctly:
+    ax.ticklabel_format(style='plain', useOffset=False, axis='y')
+    line, = ax.plot([], [], '-o')  # empty line we’ll update
+
+    # grating = torch.rand((config['n_grating_elements'],))
+    grating = torch.tensor([0.1263, 0.0175, 0.0241, 0.4636, 0.0835, 0.7452, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 1.0000, 0.8503, 0.2356, 0.4283, 0.4591, 0.2953, 0.6009, 0.8746], dtype = torch.float32)
     prev_eff = 0
-    for epoch in range(150):
-        gradient, power, eff = gradient_per_image(grating, 1, 0, depth)
+    effs=[]
+    epochs=[]
+    for epoch in range(1000):
+        gradient, power, eff = gradient_per_image(grating, 1.1, 0, depth)
+        epochs.append(epoch)
+        effs.append(eff.item())
+
+        # update your live plot:
+        line.set_data(epochs, effs)
+        ax.relim()            # recalculate limits
+        ax.autoscale_view()   # autoscale
+        fig.canvas.draw()
+        fig.canvas.flush_events()
+        
         if eff < prev_eff:
-            print("\n\nFAILED\n")
-            # break
+            print("FAILED")
         prev_eff = eff
-        # print('-'*30)
         # print(f'E: {epoch} >> P: {power.detach().numpy()}')
-        print(f'Ef: {eff.numpy()}')
+        print(f'E: {epoch} >> Ef: {eff.numpy()}')
         # print(f'G: {gradient.detach().numpy()}')
-        print(f'V: {grating}')
-        grating -= gradient*.1
+        print(f'V: {[f"{v:.4f}" for v in grating]}')
+        grating -= gradient*.01 # normally is .01
         with torch.no_grad():
             grating.data.clamp_(0.0, 1.0)
-    import time
-    time.sleep(10)
+        if epoch % 50 == -1:
+            import time
+            print('WAITING')
+            time.sleep(10)
+    print(depth)
